@@ -1,0 +1,131 @@
+DATA_DIR: C:/Users/USER/high_density_sleep
+METADATA_FILE_NAME: "Details information for healthy subjects.csv"
+
+SLEEP_LABELS_SUFFIX: ".txt"
+OUTPUT_DIR: 'output'
+MODEL_DIR: 'models'
+FIGURE_DIR: 'figures'
+
+window_length: 30 # in seconds
+
+emg_channels:
+  - "CHEMG1"
+  - "CHEMG2"
+  - "RLEG-"
+  - "RLEG+"
+  - "LLEG-"
+  - "LLEG+"
+eog_channels:
+  - "EOG2"
+  - "EOG1"
+ecg_channels:
+  - "ECG2"
+  - "ECG1"
+
+clean_non_eeg_channels:
+  - "EOG2"
+  - "EOG1"
+  - "CHEMG"
+  - "RLEG"
+  - "LLEG"
+  - "ECG"
+
+METADATA_COLUMNS:
+  - "time"
+  - "stage"
+  - "time_from_onset"
+  - "epoch_length"
+  - "num"
+  - "patient"
+
+
+DEMOGRAPHIC_AND_SLEEP_MEASURES:
+  - "Age"
+  - "Sex"
+  - "TST(min)"
+  - "WASO(min)"
+  - "SE(%TRT)"
+  - "SOL(min)"
+  - "REML(min)"
+  - "N1(min)"
+  - "N2(min)"
+  - "N3(min)"
+  - "R(min)"
+
+valid_sleep_stages:
+  - "W"
+  - "N1"
+  - "N2"
+  - "N3"
+  - "R"
+
+stage_color_map:
+  "W": "orange"
+  "R": "red"
+  "N1": "magenta"
+  "N2": "royalblue"
+  "N3": "midnightblue"
+
+sleep_stage_plot_values:
+  "W": 5
+  "R": 4
+  "N1": 3
+  "N2": 2
+  "N3": 1
+
+sleep_stage_hypno_values:
+  "W": 0
+  "R": 4
+  "N1": 1
+  "N2": 2
+  "N3": 3
+  "L": -1
+
+bands:
+  "low_delta": [0.5, 1.5]
+  "high_delta": [1, 4]
+  "theta": [4, 8]
+  "alpha": [8, 12]
+  "low_sigma": [10, 13]
+  "high_sigma": [12, 16]
+  "beta": [15, 25]
+  "gamma": [25, 40]
+
+min_ex: 0.02 # the minimal explained variance ratio to keep in the pcs
+
+eeg_name_map:
+  low_delta_power: "Slow waves"
+  high_delta_power: "Delta"
+  theta_power: "Theta"
+  alpha_power: "Alpha"
+  low_sigma_power: "Low sigma"
+  high_sigma_power: "High sigma"
+  beta_power: "Beta"
+  gamma_power: "Gamma"
+  log_low_delta_power: "Slow waves (log)"
+  log_high_delta_power: "Delta (log)"
+  log_theta_power: "Theta (log)"
+  log_alpha_power: "Alpha (log)"
+  log_low_sigma_power: "Low sigma (log)"
+  log_high_sigma_power: "High sigma (log)"
+  log_beta_power: "Beta (log)"
+  log_gamma_power: "Gamma (log)"
+  log_spectral_intercept: "Intercept"
+  log_spectral_slope: "Slope"
+  spectral_entropy: "Entropy"
+  root_total_power: "Power"
+
+non_eeg_name_map:
+  EOG:
+    EOG_horizontal_right: "RH"
+    EOG_vertical_left: "LV"
+    EOG_r_l_diff: "L-R"
+  EMG:
+    LLEG_power: "LL"
+    RLEG_power: "RL"
+    CHEMG_power: "Chin"
+  ECG:
+    ECG_heart_rate: "HR"
+    ECG_SDNN: "SDNN"
+    ECG_rmssd: "HRV"
+
