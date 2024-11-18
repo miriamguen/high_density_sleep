@@ -71,25 +71,28 @@ def train_and_map(
             n_components=start_from.n_components,
             covariance_type="full",
             init_params="",
-            n_iter=100,
-            tol=1.0e-2,
+            n_iter=2000,
+            tol=1.0e-5,
             random_state=42,
         )
         # Set init_params="" to prevent re-initialization
 
-        # Assign parameters to the new model
+        # # Assign parameters to the new model
         model.startprob_ = startprob
         model.transmat_ = transmat
         model.means_ = means
         model.covars_ = covars
 
     model.fit(X, lengths=lengths)
-    hidden_states = model.predict(X, lengths=lengths)
+    _, posteriors = model._score(
+        X, lengths=lengths, compute_posteriors=True
+    )
 
     state_to_stage = {}
+    # use the sample with the maximal posterior probability to set the state- making this minimally supervised
+    # This approach will allow the labelers to only define one label per state
     for state in range(n_states):
-        most_common_stage = Counter(labels[hidden_states == state]).most_common(1)[0][0]
-        state_to_stage[state] = most_common_stage
+        state_to_stage[state] = labels[np.argmax(posteriors[:, state])]
 
     return model, state_to_stage
 
@@ -378,10 +381,9 @@ def plot_evaluation_metrics(
         else:
             max_val = results_df[metric].max()
             min_val = results_df[metric].min()
-            mean_val = (max_val+min_val) / 2
-            range_val = max(mean_val-min_val, max_val-mean_val)*1.3
-            axes[i].set_ylim([mean_val-range_val, mean_val+range_val])
-
+            mean_val = (max_val + min_val) / 2
+            range_val = max(mean_val - min_val, max_val - mean_val) * 1.3
+            axes[i].set_ylim([mean_val - range_val, mean_val + range_val])
 
             best_state_median = results_df[
                 results_df["n_states"] == optimal_hidden_states
@@ -393,7 +395,7 @@ def plot_evaluation_metrics(
                 linestyle=":",
                 label=f"Lowest median BIC: {optimal_hidden_states} states",
             )
-        axes[i].legend(loc='lower right')
+        axes[i].legend(loc="lower right")
 
     axes[i].set_xlabel("Hidden States", fontsize=14)
     axes[i].set_xticks(x)
@@ -430,9 +432,10 @@ def plot_hidden_state_stage_distribution(
         label: to_rgba(color, alpha=alpha_value)
         for label, color in stage_color_map.items()
     }
-    n_cols = int(np.ceil(len(unique_states) / 2))
     # Set up the plot layout with one subplot per hidden state
-    fig, axes = plt.subplots(2, n_cols, figsize=(n_cols * 5, 2 * 5))
+    fig, axes = plt.subplots(
+        len(unique_states), 1, figsize=(4.5, len(unique_states) * 4.5)
+    )
 
     state_label_counts = {}
     for i, state in enumerate(state_order):
@@ -443,17 +446,17 @@ def plot_hidden_state_stage_distribution(
             "hidden_states_mapped"
         ].unique()
 
-        y, x = np.divmod(i, n_cols)
-
         state_name
-        assert len(state_name) == 1
+        if len(state_name) != 1:
+            continue
+
         state_name = state_name[0]
         label_counts = state_data.value_counts()
         state_label_counts[state] = label_counts.to_dict()
         # Get colors for each label based on color mapping
         colors = [colors_with_alpha[label] for label in label_counts.index]
 
-        wedges, texts, autotexts = axes[y, x].pie(
+        wedges, texts, autotexts = axes[i].pie(
             label_counts,
             labels=None,
             autopct=lambda p: f"{p:.1f}%" if p >= 1 else "",
@@ -466,7 +469,7 @@ def plot_hidden_state_stage_distribution(
         for autotext in autotexts:
             autotext.set_fontsize(12)
 
-        axes[y, x].set_title(
+        axes[i].set_title(
             f"Hidden State {state} ({100*state_prevalence[i]:.0f}%)",
             fontsize=14,
         )
@@ -484,7 +487,7 @@ def plot_hidden_state_stage_distribution(
                 )
                 for color in stage_color_map.values()
             ]
-            axes[y, x].legend(
+            axes[i].legend(
                 handles,
                 stage_color_map.keys(),
                 title="Sleep Stages",
@@ -494,7 +497,8 @@ def plot_hidden_state_stage_distribution(
 
     if title != None:
         fig.suptitle(title, fontsize=16)
-    plt.tight_layout(pad=2)
+
+    plt.tight_layout()
 
     # Ensure the save directory exists
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -622,14 +626,15 @@ def plot_transition_graph(
         }
     else:
         pos = {
-            0: (1.5, 0.0),
-            1: (3.0, 2.0),
-            2: (2.0, 3.0),
-            3: (1.0, 4.0),
-            4: (3.0, 4.0),
-            5: (2.0, 5.5),
-            6: (1.0, 2.0),
-            7: (2.5, 0.0),
+            0: (2.5, 8),
+            5: (5.5, 8),
+            3: (0, 5.5),
+            1: (8, 5.5),
+            4: (4, 4),
+            2: (0, 2.5),
+            6: (8, 2.5),
+            8: (2, 0),
+            7: (6, 0),
         }
 
         hidden_states = list(pos.keys())
@@ -678,7 +683,7 @@ def plot_transition_graph(
     # Draw nodes
     # Draw nodes with colors from the stage_color_map
     node_colors = {node: stage_color_map[node] for node in pos.keys()}
-    node_sizes = 4000 * np.emath.logn(len(in_degree), in_degree.loc[pos.keys()])
+    node_sizes = 4000 * np.emath.logn(len(in_degree), in_degree.loc[pos.keys()]) + 700
     node_alpha = 1 - 0.9 * (out_degree / len(out_degree)).loc[pos.keys()]
 
     nx.draw_networkx_nodes(
@@ -756,7 +761,7 @@ def plot_transition_graph(
 
 def plot_parameter_means_and_ci(
     model: hmm.GaussianHMM,
-    state_map: dict,
+    stage_color_map: Dict[str, str],
     feature_names: list,
     state_order: list,
     save_path: str,
@@ -772,7 +777,7 @@ def plot_parameter_means_and_ci(
     n_states = model.n_components
     n_features = model.means_.shape[1]
     states = [int(state.split(" ")[0]) for state in state_order]
-
+    color_order = [stage_color_map[x] for x in state_order]
     # Set up subplots for each feature
     fig, axes = plt.subplots(
         1, n_features, figsize=(3 * n_features, n_states), sharey="row"
@@ -795,7 +800,7 @@ def plot_parameter_means_and_ci(
         axes[feature_idx].scatter(
             means,
             range(n_states),
-            color="royalblue",
+            color=color_order,  # "royalblue",
             edgecolor="black",
             s=100,
             zorder=3,
@@ -805,7 +810,7 @@ def plot_parameter_means_and_ci(
             range(n_states),
             xerr=std_devs,
             fmt="o",
-            color="royalblue",
+            color="black",  # color_order,#"royalblue",
             capsize=5,
             zorder=2,
             lw=2,
@@ -850,18 +855,19 @@ def plot_parameter_means_and_ci(
                 ["Start", "End"], ha="center", fontsize=12
             )
 
-    plt.tight_layout()  # rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(pad=1)  # rect=[0, 0.03, 1, 0.95])
     plt.savefig(save_path)
     plt.close()
 
 
-def plot_state_time_histogram(results, bins, state_order, save_path):
+def plot_state_time_histogram(results, bins, stage_color_map, state_order, save_path):
     """
     Plots the time distribution for each hidden state as a histogram with a KDE overlay.
 
     Args:
         results (pd.DataFrame): DataFrame containing 'hidden_state' and 'time' columns.
         bins (int): Number of bins for the histogram.
+        stage_color_map:
         state_order: the order in which to plot the stats
         save_path: use directory and file name joined
     """
@@ -882,7 +888,10 @@ def plot_state_time_histogram(results, bins, state_order, save_path):
     # Plot histogram with KDE overlay for each hidden state
     for i, state in enumerate(hidden_states):
         state_data = results[results["hidden_states"] == state]
+        if len(state_data) == 0:
+            continue
         mapped_state = state_data["hidden_states_mapped"].values[0]
+        color = stage_color_map[mapped_state]
         # Plot histogram and KDE
         sns.histplot(
             state_data["time"],
@@ -890,7 +899,7 @@ def plot_state_time_histogram(results, bins, state_order, save_path):
             binrange=(0, 1),
             kde=True,
             ax=axes[i],
-            color="royalblue",
+            color=color,  # "royalblue",
             edgecolor="black",
         )
         axes[i].set_xlim(0, 1)  # Set range for histogram
@@ -899,7 +908,7 @@ def plot_state_time_histogram(results, bins, state_order, save_path):
     # Label the x-axis of the last subplot
     axes[-1].set_xlabel("Relative Time")
 
-    plt.tight_layout()
+    plt.tight_layout(pad=1)
     plt.savefig(save_path)
     plt.close()
 

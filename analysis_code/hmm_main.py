@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import networkx as nx
+import pickle
+
 
 from hmm_utils import (
     create_state_profile,
@@ -62,7 +64,7 @@ results = []
 for n_states in tqdm(range(2, 26)):
     results.append(fit_and_score_cv(data, ic_names, label_col, n_states, scale=False))
 
-# save the cross validation results
+# # save the cross validation results
 results = pd.concat(results, axis=0)
 results = results.assign(data="results_ic")
 results.to_csv(hmm_path / "ica" / "ica_n_state_scan.csv")
@@ -128,38 +130,64 @@ state_label_counts = plot_hidden_state_stage_distribution(
     state_info["state_ids_all"].values,
     save_path=common_path / "state_proportion_in_hidden.svg",
     alpha_value=0.7,
-    title=f"Overall hidden state assignment, Kappa={kappa:0.2f}, Accuracy={accuracy:0.2f}",
+    title=None,  # f"Overall hidden state assignment, \nKappa={kappa:0.2f}, Accuracy={accuracy:0.2f}",
 )
-
-# look at the IC value distribution of each hidden state, of the different labeled sleep stages within each hidden - to asses for similarity 
 results["state_ids"] = [f"{k} ({state_to_stage[k]})" for k in results.hidden_states]
-for ic in ic_names:
-    fig, ax = plt.subplots(figsize=(5, 5))
-    ax.axhline(y=0, color="gray", linestyle="--", label="0", alpha=0.75, linewidth=1)
+state_counts = (
+    pd.DataFrame(state_label_counts)
+    .fillna(0)
+    .rename(columns=lambda x: int(x[0]), index=lambda x: f"{x}_count")
+    .reset_index()
+    .rename(columns={"index": "parameter"})
+)
+summary_df = create_state_profile(model_all, results, state_to_stage, ic_names)
+summary_df = pd.concat([state_counts, summary_df], axis=0)
+summary_df.to_csv(common_path / "model_summary_info.csv")
+
+# look at the IC value distribution of each hidden state, of the different labeled sleep stages within each hidden - to asses for similarity
+state_order = state_info["state_ids_all"].values
+for i, ic in enumerate(ic_names):
+    fig, ax = plt.subplots(figsize=(4, 10))
+    ax.axvline(x=0, color="gray", linestyle="--", label="0", alpha=0.75, linewidth=1)
     sns.violinplot(
-        data=data,
-        y=ic,
-        x="state_ids",
-        hue="labels",
+        x=data[ic],
+        y=results["state_ids"],
+        hue=results["hidden_states_mapped"],
         palette=PARAMETERS["stage_color_map"],
         density_norm="count",
         cut=0,
         ax=ax,
         inner="quart",
         order=state_info["state_ids_all"].values,
+        legend=False,
+    )
+
+    ax.set_yticks(list(range(len(state_order))))
+    ax.set_yticklabels(
+        list(state_order),
+        rotation=90,
+        va="center",
+        fontsize=12,
     )
 
     max_val = max(-data[ic].min(), data[ic].max()) * 1.1
-    ax.set_ylim(-max_val, max_val)
+    ax.set_xlabel(f"{ic.split('a')[0].upper()} {i+1}")
+    ax.set_ylabel("")
+    ax.set_xlim(-max_val, max_val)
     fig.savefig(common_path / f"{ic}_hidden_state_empirical_distribution.svg")
     plt.close()
 
 
 # 3. Plot the feature distribution in each state
+hidden_stage_color_map = {
+    f"{k} ({v})": PARAMETERS["stage_color_map"][v] for k, v in state_to_stage.items()
+}
+
+
 plot_parameter_means_and_ci(
     model_all,
     feature_names=ic_names,
-    state_map=state_to_stage,
+    stage_color_map=hidden_stage_color_map,
     state_order=list(reversed(list(state_info["state_ids_all"].values))),
     save_path=common_path / "state_parameter_distribution.svg",
 )
@@ -167,6 +195,7 @@ plot_parameter_means_and_ci(
 plot_state_time_histogram(
     results,
     bins=50,
+    stage_color_map=stage_color_map,
     state_order=state_info["hidden_state"].values,
     save_path=common_path / "state_time_distribution.svg",
 )
@@ -185,51 +214,73 @@ G = plot_transition_graph(
     state_map=state_to_stage,
 )
 
-from collections import Counter
+# %% use the graph to identify common transition paths across patients
+# from collections import Counter
+# from itertools import product
 
-transition_info = [2]
-state = 2
-for new_state in results["hidden_states"].values:
-    if state != new_state:
-        transition_info.append(new_state)
-        state = new_state
+# transition_info = []
+# patients = []
+# state = ""
+# run_patient = ""
+# for new_state, patient in zip(results["state_ids"].values, data["patient"]):
+#     if patient == run_patient:
+#         if state != new_state:
+#             patients.append(patient)
+#             transition_info.append(new_state)
+#             state = new_state
+#     else:
+#         state = new_state
+#         run_patient = patient
 
-transition_info = [f"{x} ({state_to_stage[x]})" for x in transition_info]
-transition_str = "->".join(transition_info)
-cycles = list(nx.simple_cycles(G))
-cycle_counts = {}
-for cycle in cycles:
-    cycle_str = "->".join(cycle)
-    n = transition_str.count(cycle_str)
-    m = len(cycle)
-    if n > 1:
-        cycle_counts[cycle_str] = {"count": n, "transitions": m}
+# patients = np.array(patients)
+# transition_info = np.array(transition_info)
+
+# states = list(set(results["state_ids"]))
+# paths = (
+#     list(product(states, repeat=3))
+#     + list(product(states, repeat=4))
+#     + list(product(states, repeat=5))
+#     + list(product(states, repeat=6))
+# )
+# path_counts = []
+# patient_names = list(set(data["patient"]))
+
+# for patient in patient_names:
+#     transition_str = "->".join(transition_info[patients == patient])
+#     for path_ in paths:
+#         path_str = "->".join(path_)
+#         n = transition_str.count(path_str)
+#         m = len(path_)
+#         if n > 0:
+#             path_counts.append(
+#                 pd.Series(
+#                     {
+#                         "count": n,
+#                         "transitions": m,
+#                         "patient": patient,
+#                         "path_sequence": path_str,
+#                     }
+#                 )
+#             )
 
 
-cycle_counts = pd.DataFrame(cycle_counts).T.sort_values(
-    by=["transitions", "count"], ascending=False
-)
-
-
-state_counts = (
-    pd.DataFrame(state_label_counts)
-    .fillna(0)
-    .rename(columns=lambda x: int(x[0]), index=lambda x: f"{x}_count")
-    .reset_index()
-    .rename(columns={"index": "parameter"})
-)
-summary_df = create_state_profile(model_all, results, state_to_stage, ic_names)
-summary_df = pd.concat([state_counts, summary_df], axis=0)
-summary_df.to_csv(common_path / "model_summary_info.csv")
+# path_counts = (
+#     pd.concat(path_counts, axis=1)
+#     .T.sort_values(
+#         by=["transitions", "path_sequence", "count", "patient"], ascending=False
+#     )
+#     .reset_index(drop=True)
+# )
+# path_counts.to_csv(common_path / "path_counts.csv")
 
 
 # %% personalized patient analysis:
 # start by the general model, re-fit the model - test performance on patient and get a kappa per patient
 
 subjects = data.patient.unique()
-sleep_measures_hypno = []
-sleep_measures_dont_retrain = []
-sleep_measures_retrain = []
+sleep_measures_hypno = {}
+sleep_measures_dont_retrain = {}
+sleep_measures_retrain = {}
 
 
 for subject in subjects:
@@ -239,11 +290,13 @@ for subject in subjects:
     os.makedirs(subject_path / "retrain", exist_ok=True)
     os.makedirs(subject_path / "dont_rtrain", exist_ok=True)
     subject_data = data.query(f"patient=='{subject}'").reset_index()
-    sleep_measures_hypno.append(get_sleep_measures_for_patient(subject_data[label_col]))
+    sleep_measures_hypno[subject] = get_sleep_measures_for_patient(
+        subject_data[label_col]
+    )
     # todo: fold all this into a function and run twice
     #   once with the subject model
     #   once with the global model - in this case only update the transition probabilities
-    for retrain in ["retrain", "dont_rtrain"]:
+    for retrain in ["dont_rtrain", "retrain"]:
 
         if retrain == "retrain":
             subject_model, subject_state_to_stage = train_and_map(
@@ -253,9 +306,12 @@ for subject in subjects:
                 n_states=best_groups,
                 start_from=model_all,
             )
+            # drop model to pickle
+            with open(subject_path / retrain / "refitted_model.pkl", "wb") as file:
+                pickle.dump(subject_model, file)
         else:
             subject_model = model_all
-            subject_state_to_stage = (state_to_stage,)
+            subject_state_to_stage = state_to_stage
 
         bic, adjusted_log_likelihood, accuracy, kappa, results = evaluate(
             subject_model,
@@ -279,15 +335,15 @@ for subject in subjects:
         model_metrics.to_csv(subject_path / retrain / "model_metrics.csv")
 
         state_info = pd.DataFrame(subject_state_to_stage, index=["mapped_states_all"]).T
-        state_info["median_time_all"] = (
-            results.groupby("hidden_states")["time"].median().values
+        state_info["highest_rate"] = results.groupby("hidden_states")["time"].apply(
+            lambda x: np.histogram(x, bins=8)[0].argmax()
         )
         state_info["state_ids_all"] = [
             f"{k} ({v})" for k, v in subject_state_to_stage.items()
         ]
         state_info = state_info.reset_index().rename(columns={"index": "hidden_state"})
         state_info = state_info.sort_values(
-            ["mapped_states_all", "median_time_all"], ascending=[False, True]
+            ["highest_rate", "mapped_states_all"], ascending=[True, False]
         )
 
         state_label_counts = plot_hidden_state_stage_distribution(
@@ -297,7 +353,7 @@ for subject in subjects:
             state_info["state_ids_all"].values,
             save_path=subject_path / retrain / "state_proportion_in_hidden.svg",
             alpha_value=0.7,
-            title=f"Overall hidden state assignment, Kappa={kappa:0.2f}, Accuracy={accuracy:0.2f}",
+            title=None,
         )
 
         state_counts = (
@@ -313,20 +369,24 @@ for subject in subjects:
         )
         summary_df = pd.concat([state_counts, summary_df], axis=0)
         summary_df.to_csv(subject_path / retrain / "model_summary_info.csv")
-
+        subject_hidden_stage_color_map = {
+            f"{k} ({v})": PARAMETERS["stage_color_map"][v]
+            for k, v in subject_state_to_stage.items()
+        }
         if retrain == "retrain":
             plot_parameter_means_and_ci(
                 subject_model,
                 feature_names=ic_names,
-                state_map=subject_state_to_stage,
-                state_order=state_info["state_ids_all"].values,
+                stage_color_map=subject_hidden_stage_color_map,
+                state_order=list(reversed(list(state_info["state_ids_all"].values))),
                 save_path=subject_path / retrain / "state_parameter_distribution.svg",
             )
 
         plot_state_time_histogram(
             results,
             bins=30,
-            state_order=list(reversed(state_info.hidden_state.values)),
+            stage_color_map=stage_color_map,
+            state_order=state_info.hidden_state.values,
             save_path=subject_path / retrain / "state_time_distribution.svg",
         )
 
@@ -338,9 +398,10 @@ for subject in subjects:
                 columns=range(subject_model.n_components),
                 index=range(subject_model.n_components),
             )
-            sleep_measures_retrain.append(
-                get_sleep_measures_for_patient(results.hidden_states_mapped)
+            sleep_measures_retrain[subject] = get_sleep_measures_for_patient(
+                results.hidden_states_mapped
             )
+
         else:
             # estimate the transition probabilities from the predicted sequence for the patient
             transition_probs = pd.DataFrame(
@@ -348,8 +409,8 @@ for subject in subjects:
                 columns=range(subject_model.n_components),
                 index=range(subject_model.n_components),
             )
-            sleep_measures_dont_retrain.append(
-                get_sleep_measures_for_patient(results.hidden_states_mapped)
+            sleep_measures_dont_retrain[subject] = get_sleep_measures_for_patient(
+                results.hidden_states_mapped
             )
 
         plot_transition_graph(
@@ -361,13 +422,40 @@ for subject in subjects:
 
         # save patient results
         results.to_csv(subject_path / retrain / "results.csv")
-        # drop model to pickle
 
         del subject_model
 
 
 # estimate bland_altman_plot, calculate_icc
+sleep_measures_hypno = pd.DataFrame(sleep_measures_hypno).T.fillna(0)
+sleep_measures_dont_retrain = pd.DataFrame(sleep_measures_dont_retrain).T.fillna(0)
+sleep_measures_retrain = pd.DataFrame(sleep_measures_retrain).T.fillna(0)
 
+sleep_measure_path = hmm_path / "ica" / "sleep_measures"
+os.makedirs(sleep_measure_path, exist_ok=True)
+sleep_measures_hypno.to_csv("measures_from_hypno.csv")
+sleep_measures_dont_retrain.to_csv("measures_from_shared_model.csv")
+sleep_measures_retrain.to_csv("measures_from_refitted_model.csv")
+
+compare_sleep_and_unsupervised_measures(
+    sleep_measures_all=sleep_measures_hypno,
+    unsupervised_measures_all=sleep_measures_dont_retrain,
+    save_path=sleep_measure_path / "baseline_to_shared_model",
+)
+
+compare_sleep_and_unsupervised_measures(
+    sleep_measures_all=sleep_measures_hypno,
+    unsupervised_measures_all=sleep_measures_retrain,
+    save_path=sleep_measure_path / "baseline_to_retrain_model",
+)
+
+compare_sleep_and_unsupervised_measures(
+    sleep_measures_all=sleep_measures_dont_retrain,
+    unsupervised_measures_all=sleep_measures_retrain,
+    save_path=sleep_measure_path / "shared_to_retrain_model",
+)
+
+print("whats next")
 # individual analysis:
 # retrain an individual model and do same evaluation
 # how similar is the mapping to the general model?
@@ -376,8 +464,3 @@ for subject in subjects:
 # 1. is rem stage stability reduced in patient with early onset REM or reduced REM sleep
 # 2. is N3 stage stability related to other params?
 # 3. is N2 stage stability related to other
-# 4.
-# save the model
-
-
-# ana
