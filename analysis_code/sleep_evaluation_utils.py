@@ -134,7 +134,6 @@ def get_sleep_measures_for_patient(
     """
     # Convert the manual and cluster labels to YASA-compatible format
     labels = list(map(lambda x: stage_map[x], labels))
-    labels = list(map(lambda x: stage_map[x], labels))
 
     # Define the sampling frequency in terms of hypnogram epochs (YASA uses samples per hour)
     sf_hyp = sampling_rate / 60  # Convert samples per minute to per hour
@@ -146,7 +145,9 @@ def get_sleep_measures_for_patient(
 
 
 def compare_sleep_and_unsupervised_measures(
-    sleep_measures_all: pd.DataFrame, unsupervised_measures_all: pd.DataFrame, save_path: Path
+    sleep_measures_all: pd.DataFrame,
+    unsupervised_measures_all: pd.DataFrame,
+    save_path: Path,
 ) -> None:
     """
     Compares sleep measures derived from manual sleep stage annotations and unsupervised states.
@@ -161,13 +162,15 @@ def compare_sleep_and_unsupervised_measures(
         DataFrame containing sleep measures based on manually labeled sleep stages.
     unsupervised_measures_all : pd.DataFrame
         DataFrame containing sleep measures based on clusters from unsupervised learning.
-    save_path : where to save the results 
+    save_path : where to save the results
     Returns:
     --------
     None:
         Results are saved as figures (scatter plots and Bland-Altman plots) and CSV files
         (ICC results and summary).
     """
+    os.makedirs(save_path, exist_ok=True)
+    os.makedirs(save_path / "figures", exist_ok=True)
     icc2_result_summary: Dict[str, Dict] = {}
 
     # Ensure the 'Patient' and 'TRT' columns are not compared
@@ -211,8 +214,8 @@ def compare_sleep_and_unsupervised_measures(
             plt.grid(True)
 
             # Save the scatter plot
-            os.makedirs(save_path / "sleep_measures" / "figures", exist_ok=True)
-            plt.savefig(save_path / "sleep_measures" / "figures" / f"{col}_scatter_plot.svg")
+            os.makedirs(save_path / "figures", exist_ok=True)
+            plt.savefig(save_path / "figures" / f"{col}_scatter_plot.svg")
             plt.close()
 
             # Calculate Intraclass Correlation Coefficient (ICC)
@@ -226,17 +229,15 @@ def compare_sleep_and_unsupervised_measures(
             print(f"ICC Value (Type ICC2): {icc_value:.3f}\n")
 
             # Save the detailed ICC results as CSV
-            icc_details.to_csv(save_path / "sleep_measures" / f"{col}_icc_results.csv", index=False)
+            icc_details.to_csv(save_path / f"{col}_icc_results.csv", index=False)
 
             # Create Bland-Altman Plot for agreement analysis
             bland_altman_plot(
                 new_test_results.values,
                 gold_standard_results.values,
                 measure=col,
-                save_path=save_path / "sleep_measures" / "figures" / f"{col}_bland_altman_plot.svg",
+                save_path=save_path / "figures" / f"{col}_bland_altman_plot.svg",
             )
 
     # Save the ICC2 summary results as CSV
-    pd.DataFrame(icc2_result_summary).to_csv(save_path / "sleep_measures" / "icc2_result_summary.csv")
-
-
+    pd.DataFrame(icc2_result_summary).to_csv(save_path / "icc2_result_summary.csv")
