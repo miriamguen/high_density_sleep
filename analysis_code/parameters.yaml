@@ -2,7 +2,7 @@ DATA_DIR: C:/Users/USER/high_density_sleep
 METADATA_FILE_NAME: "Details information for healthy subjects.csv"
 
 SLEEP_LABELS_SUFFIX: ".txt"
-OUTPUT_DIR: 'output'
+OUTPUT_DIR: 'output_no_norm'
 MODEL_DIR: 'models'
 FIGURE_DIR: 'figures'
 

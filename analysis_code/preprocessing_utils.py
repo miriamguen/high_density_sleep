@@ -127,9 +127,9 @@ def preprocess_eeg(
     )  # Total recording time in minutes
     means = raw_data.mean(axis=1, keepdims=True)
     stds = raw_data.std(axis=1, keepdims=True)
-    stds[stds == 0] = 1  # Prevent division by zero
-    normalized_data = (raw_data - means) / stds
-    raw._data = normalized_data
+    # stds[stds == 0] = 1  # Prevent division by zero
+    # normalized_data = (raw_data - means) / stds
+    # raw._data = normalized_data
 
     # Epoch the data
     events = mne.make_fixed_length_events(raw, duration=epoch_length, overlap=overlap)

@@ -55,8 +55,8 @@ def train_and_map(
         model = hmm.GaussianHMM(
             n_components=n_states,
             covariance_type="full",
-            n_iter=2000,
-            tol=1.0e-5,
+            n_iter=1000,
+            tol=1.0e-3,
             random_state=42,
         )
     else:
@@ -70,9 +70,10 @@ def train_and_map(
         model = hmm.GaussianHMM(
             n_components=start_from.n_components,
             covariance_type="full",
+            params="t",  # update the transition probabilities
             init_params="",
-            n_iter=2000,
-            tol=1.0e-5,
+            n_iter=200,
+            tol=1.0e-2,
             random_state=42,
         )
         # Set init_params="" to prevent re-initialization
@@ -83,10 +84,8 @@ def train_and_map(
         model.means_ = means
         model.covars_ = covars
 
-    model.fit(X, lengths=lengths)
-    _, posteriors = model._score(
-        X, lengths=lengths, compute_posteriors=True
-    )
+    model = model.fit(X, lengths=lengths)
+    _, posteriors = model._score(X, lengths=lengths, compute_posteriors=True)
 
     state_to_stage = {}
     # use the sample with the maximal posterior probability to set the state- making this minimally supervised
@@ -95,6 +94,29 @@ def train_and_map(
         state_to_stage[state] = labels[np.argmax(posteriors[:, state])]
 
     return model, state_to_stage
+
+
+def careful_predict(model, X, lengths, emission_gap=0.8):
+    """
+    This function uses careful predictions, in cases were the emission probability is high this overrides the
+    Viterbi Algorithm predictions, this may allow some cases of sharper transitions where the data shows the shift
+
+    important - in shorter segments this may not be recommended, or the emission_th should be increased
+    """
+    log_likelihood, posteriors = model._score(
+        X, lengths=lengths, compute_posteriors=True
+    )
+    emission_states = np.argmax(posteriors, axis=1)
+    emission_diff = -np.min(posteriors.T - np.max(posteriors, axis=1), axis=0)
+    hidden_states = model.predict(X, lengths=lengths)
+    cond_1 = hidden_states != emission_states
+
+    if np.sum(cond_1) > 0:
+        cond_2 = emission_diff > emission_gap
+        override = np.logical_and(cond_1, cond_2)
+        hidden_states[override] = emission_states[override]
+
+    return log_likelihood, posteriors, hidden_states
 
 
 def evaluate(
@@ -118,9 +140,10 @@ def evaluate(
     Returns:
         BIC, ARI, accuracy, kappa, and (optionally) posteriors.
     """
-    log_likelihood, posteriors = model._score(
-        X, lengths=lengths, compute_posteriors=True
+    log_likelihood, posteriors, hidden_states = careful_predict(
+        model, X, lengths=lengths, emission_gap=0.8
     )
+
     n_data_points = X.shape[0]
     stats = model.n_components
     features = model.n_features
@@ -136,7 +159,7 @@ def evaluate(
     adjusted_log_likelihood = log_likelihood / (
         len(X) * np.sqrt(np.var(X, axis=0).sum())
     )
-    hidden_states = model.predict(X, lengths=lengths)
+
     hidden_states_mapped = np.vectorize(state_to_stage.get)(hidden_states)
     accuracy = accuracy_score(labels, hidden_states_mapped)
     kappa = cohen_kappa_score(labels, hidden_states_mapped)

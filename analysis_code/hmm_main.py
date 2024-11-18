@@ -61,7 +61,7 @@ ic_names = ["ica0", "ica1", "ica2", "ica3", "ica4", "ica5"]
 results = []
 
 # scan the state range from 2 to 25 using leave one out cross validation
-for n_states in tqdm(range(2, 26)):
+for n_states in tqdm(range(2, 25)):
     results.append(fit_and_score_cv(data, ic_names, label_col, n_states, scale=False))
 
 # # save the cross validation results
@@ -309,6 +309,8 @@ for subject in subjects:
             # drop model to pickle
             with open(subject_path / retrain / "refitted_model.pkl", "wb") as file:
                 pickle.dump(subject_model, file)
+            # keep the general stage mapping for consistency
+            subject_state_to_stage = state_to_stage
         else:
             subject_model = model_all
             subject_state_to_stage = state_to_stage
