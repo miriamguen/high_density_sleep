@@ -55,8 +55,8 @@ def train_and_map(
         model = hmm.GaussianHMM(
             n_components=n_states,
             covariance_type="full",
-            n_iter=1000,
-            tol=1.0e-3,
+            n_iter=100,
+            tol=1.0e-2,
             random_state=42,
         )
     else:
@@ -70,10 +70,10 @@ def train_and_map(
         model = hmm.GaussianHMM(
             n_components=start_from.n_components,
             covariance_type="full",
-            params="t",  # update the transition probabilities
+            params="stmc",  # update the transition probabilities
             init_params="",
-            n_iter=200,
-            tol=1.0e-2,
+            n_iter=10,
+            tol=1.0e-1,
             random_state=42,
         )
         # Set init_params="" to prevent re-initialization
@@ -88,12 +88,25 @@ def train_and_map(
     _, posteriors = model._score(X, lengths=lengths, compute_posteriors=True)
 
     state_to_stage = {}
-    # use the sample with the maximal posterior probability to set the state- making this minimally supervised
-    # This approach will allow the labelers to only define one label per state
+    patient_mapping = {}
+    # use the sample with the maximal posterior probability for each training patient to set the state- making this minimally supervised
+    # This approach will allow the labelers to only define one label per state in each patient, prompt by the system
     for state in range(n_states):
-        state_to_stage[state] = labels[np.argmax(posteriors[:, state])]
+        if lengths is not None:
+            i = 0
+            best_label = []
+            for length in lengths:
+                best_label.append(
+                    labels[i + np.argmax(posteriors[i : i + length, state])]
+                )
+                i = i + length
+            state_to_stage[state] = max(best_label, key=best_label.count)
+            patient_mapping[state] = best_label
+        else:
+            state_to_stage[state] = labels[np.argmax(posteriors[:, state])]
+            patient_mapping[state] = state_to_stage[state]
 
-    return model, state_to_stage
+    return model, state_to_stage, patient_mapping
 
 
 def careful_predict(model, X, lengths, emission_gap=0.8):
@@ -147,15 +160,9 @@ def evaluate(
     n_data_points = X.shape[0]
     stats = model.n_components
     features = model.n_features
-    n_params = (
-        stats * (stats - 1)
-        # Transition Probability Matrix
-        + (stats - 1)
-        # Initial State Probabilities
-        + (stats * features + features * (features + 1) / 2)
-        #  Emission Probabilities (Gaussian Parameters)
-    )
-    bic = n_params * np.log(n_data_points) - 2 * log_likelihood
+
+    bic = model.bic(X)
+    aic = model.aic(X)
     adjusted_log_likelihood = log_likelihood / (
         len(X) * np.sqrt(np.var(X, axis=0).sum())
     )
@@ -175,9 +182,9 @@ def evaluate(
             hidden_states_mapped=hidden_states_mapped,
             labels=labels,
         )
-        return bic, adjusted_log_likelihood, accuracy, kappa, result
+        return bic, aic, adjusted_log_likelihood, accuracy, kappa, result
     else:
-        return bic, adjusted_log_likelihood, accuracy, kappa
+        return bic, aic, adjusted_log_likelihood, accuracy, kappa
 
 
 def fit_and_score_cv(
@@ -222,13 +229,13 @@ def fit_and_score_cv(
         train_lengths = train_df.groupby(cv_col).size().tolist()
         train_labels = train_df[label_col].values
         train_data = train_df[feature_names].values
-        model, state_to_stage = train_and_map(
+        model, state_to_stage, patient_mapping = train_and_map(
             X=train_data, labels=train_labels, n_states=n_states, lengths=train_lengths
         )
         # evaluate on the test patient
         test_labels = test_df[label_col].values
         test_data = test_df[feature_names].values
-        bic, adjusted_log_likelihood, accuracy, kappa = evaluate(
+        bic, aic, adjusted_log_likelihood, accuracy, kappa = evaluate(
             model,
             state_to_stage,
             X=test_data,
@@ -239,6 +246,7 @@ def fit_and_score_cv(
 
         all_patient_results[patient] = {
             "bic": bic,
+            "aic": aic,
             "adjusted_log_likelihood": adjusted_log_likelihood,
             "accuracy": accuracy,
             "kappa": kappa,
@@ -246,7 +254,11 @@ def fit_and_score_cv(
             "state_to_stage": str(state_to_stage),
         }
     if return_model:
-        models[patient] = {"model": model, "state_to_stage": state_to_stage}
+        models[patient] = {
+            "model": model,
+            "state_to_stage": state_to_stage,
+            "patient_mapping": patient_mapping,
+        }
         return models, pd.DataFrame(all_patient_results).T.reset_index()
     else:
         return pd.DataFrame(all_patient_results).T.reset_index()
@@ -277,7 +289,24 @@ def select_best(results: pd.DataFrame) -> np.ndarray:
             improved.append(False)
             false_count += 1
 
-    groups = np.where(improved)[0]
+    groups_b = np.where(improved)[0]
+
+    aic = results.groupby("n_states")["aic"].median()
+    improved = [True]
+    false_count = 0
+    l = aic.values[0]
+
+    for m_l in aic.values[1:]:
+        if m_l < l:
+            l = m_l
+            improved.append(True)
+            false_count = 0
+        else:
+            improved.append(False)
+            false_count += 1
+
+    groups_a = np.where(improved)[0]
+    groups = set(groups_a).intersection(groups_b)
 
     if "kappa" in results.columns:
         kappa_grouped = results.groupby("n_states")["kappa"].min()
@@ -303,7 +332,7 @@ def plot_evaluation_metrics(
     results_df: pd.DataFrame,
     best_states: List[int],
     save_path: str,
-    metrics: list = ["bic", "kappa", "accuracy"],
+    metrics: list = ["bic", "aic", "kappa", "accuracy"],
 ) -> None:
     """Plots evaluation metrics for different numbers of hidden states.
 
@@ -345,13 +374,13 @@ def plot_evaluation_metrics(
             x,
             state_medians.values,
             color="black",
-            label=f"Median {metric.capitalize()}",
+            label="Median",
             lw=1,
             linestyle="--",
             alpha=0.7,
         )
 
-        if metric != "bic":
+        if not (metric in ["bic", "aic"]):
             if metric == "adjusted_log_likelihood":
                 axes[i].set_ylabel(metric.capitalize().replace("_", " "), fontsize=14)
             else:
@@ -407,7 +436,7 @@ def plot_evaluation_metrics(
             mean_val = (max_val + min_val) / 2
             range_val = max(mean_val - min_val, max_val - mean_val) * 1.3
             axes[i].set_ylim([mean_val - range_val, mean_val + range_val])
-
+            axes[i].set_ylabel(metric.upper(), fontsize=14)
             best_state_median = results_df[
                 results_df["n_states"] == optimal_hidden_states
             ][metric].median()
@@ -416,8 +445,9 @@ def plot_evaluation_metrics(
                 best_state_median,
                 color="forestgreen",
                 linestyle=":",
-                label=f"Lowest median BIC: {optimal_hidden_states} states",
+                label=f"Best fit: {optimal_hidden_states} states",
             )
+
         axes[i].legend(loc="lower right")
 
     axes[i].set_xlabel("Hidden States", fontsize=14)
@@ -490,11 +520,12 @@ def plot_hidden_state_stage_distribution(
 
         # Set font size for percentage labels
         for autotext in autotexts:
-            autotext.set_fontsize(12)
+            autotext.set_fontsize(14)
 
-        axes[i].set_title(
-            f"Hidden State {state} ({100*state_prevalence[i]:.0f}%)",
-            fontsize=14,
+        state_num = int(state.split(" ")[0])
+        axes[i].set_xlabel(
+            f"{state}: {100*state_prevalence[state_num]:.0f}%",
+            fontsize=22,
         )
 
         if i == len(unique_states) - 1:
@@ -506,7 +537,7 @@ def plot_hidden_state_stage_distribution(
                     marker="o",
                     color=to_rgba(color, alpha=alpha_value),
                     linestyle="",
-                    markersize=12,
+                    markersize=14,
                 )
                 for color in stage_color_map.values()
             ]
@@ -519,7 +550,7 @@ def plot_hidden_state_stage_distribution(
             )
 
     if title != None:
-        fig.suptitle(title, fontsize=16)
+        fig.suptitle(title, fontsize=14)
 
     plt.tight_layout()
 
@@ -604,15 +635,14 @@ def create_circle_coordinates(values):
     Returns:
         list of tuples: Each tuple contains the (X, Y) coordinates for a point.
     """
-    n = len(values)
-    angle_increment = 2 * np.pi / n  # Angle between each point in radians
+    angle_increment = 2 * np.pi / len(values)  # Angle between each point in radians
 
-    coordinates = []
-    for i in range(n):
-        angle = np.pi / 2 + i * angle_increment
+    coordinates = {}
+    for i, state in enumerate(values):
+        angle = (np.pi / 2) + i * angle_increment
         x = 1 + np.cos(angle)  # X coordinate
         y = 1 + np.sin(angle)  # Y coordinate
-        coordinates.append((x, y))
+        coordinates[state] = (x, y)
 
     return coordinates
 
@@ -641,24 +671,26 @@ def plot_transition_graph(
         "N3": "midnightblue",
     }
 
-    if manual:
-        states = transition_probs.index.values
-        pos = {
-            k: (v[0] * 6, v[1] * 2)
-            for k, v in zip(states, create_circle_coordinates(states))
-        }
-    else:
-        pos = {
-            0: (2.5, 8),
-            5: (5.5, 8),
-            3: (0, 5.5),
-            1: (8, 5.5),
-            4: (4, 4),
-            2: (0, 2.5),
-            6: (8, 2.5),
-            8: (2, 0),
-            7: (6, 0),
-        }
+    states = transition_probs.index.values
+    pos = create_circle_coordinates(states)
+
+    if not (manual):
+        # n_hidden = len(state_map)
+        # if n_hidden == 9:
+        #     pos = {
+        #         0: (2.5, 8),
+        #         5: (5.5, 8),
+        #         3: (0, 5.5),
+        #         1: (8, 5.5),
+        #         4: (4, 4),
+        #         2: (0, 2.5),
+        #         6: (8, 2.5),
+        #         8: (2, 0),
+        #         7: (6, 0),
+        #     }
+        # else:
+        #     states = transition_probs.index.values
+        #     pos = create_circle_coordinates(states)
 
         hidden_states = list(pos.keys())
         renaming = lambda n: f"{n} ({state_map[n]})"
@@ -668,13 +700,9 @@ def plot_transition_graph(
             f"{n} ({state_map[n]})": stage_color_map[state_map[n]]
             for n in hidden_states
         }
-
-        transition_probs = transition_probs.map(
-            lambda x: 0 if x < 0.01 else np.round(x, 2)
-        )
-
         transition_probs = transition_probs.rename(index=renaming, columns=renaming)
 
+    transition_probs = transition_probs.map(lambda x: 0 if x < 0.01 else np.round(x, 2))
     # estimate in and out node degree
     transition_node = transition_probs.map(lambda x: 1 if x >= 0.01 else 0)
     out_degree = transition_node.sum(axis=1)
@@ -706,7 +734,7 @@ def plot_transition_graph(
     # Draw nodes
     # Draw nodes with colors from the stage_color_map
     node_colors = {node: stage_color_map[node] for node in pos.keys()}
-    node_sizes = 4000 * np.emath.logn(len(in_degree), in_degree.loc[pos.keys()]) + 700
+    node_sizes = 4000 * np.emath.logn(len(in_degree), in_degree.loc[pos.keys()]) + 1000
     node_alpha = 1 - 0.9 * (out_degree / len(out_degree)).loc[pos.keys()]
 
     nx.draw_networkx_nodes(
@@ -850,8 +878,9 @@ def plot_parameter_means_and_ci(
                 fontsize=12,
             )
 
+        parts = feature_names[feature_idx].split("a")
         axes[feature_idx].set_xlabel(
-            feature_names[feature_idx].replace("a", " ").upper(), fontsize=13
+            f"{parts[0].upper()} {int(parts[1])+1}", fontsize=13
         )
 
         if feature_names[feature_idx].upper() != "TIME":
@@ -927,6 +956,59 @@ def plot_state_time_histogram(results, bins, stage_color_map, state_order, save_
         )
         axes[i].set_xlim(0, 1)  # Set range for histogram
         axes[i].set_ylabel(f"{state} ({mapped_state}) count")
+
+    # Label the x-axis of the last subplot
+    axes[-1].set_xlabel("Relative Time")
+
+    plt.tight_layout(pad=1)
+    plt.savefig(save_path)
+    plt.close()
+
+
+def plot_stage_time_histogram(results, bins, stage_color_map, state_order, save_path):
+    """
+    Plots the time distribution for each hidden state as a histogram with a KDE overlay.
+
+    Args:
+        results (pd.DataFrame): DataFrame containing 'hidden_state' and 'time' columns.
+        bins (int): Number of bins for the histogram.
+        stage_color_map:
+        state_order: the order in which to plot the stats
+        save_path: use directory and file name joined
+    """
+    if state_order is None:
+        states = results["labels"].unique()
+    else:
+        states = state_order
+
+    # Set up the figure for subplots
+    n_states = len(states)
+    fig, axes = plt.subplots(n_states, 1, figsize=(5, 1.5 * n_states), sharex=True)
+    # fig.suptitle("Time Distribution by Hidden State", fontsize=16)
+
+    # If there's only one hidden state, make `axes` iterable
+    if n_states == 1:
+        axes = [axes]
+
+    # Plot histogram with KDE overlay for each hidden state
+    for i, state in enumerate(states):
+        state_data = results[results["labels"] == state]
+        if len(state_data) == 0:
+            continue
+
+        color = stage_color_map[state]
+        # Plot histogram and KDE
+        sns.histplot(
+            state_data["time"],
+            bins=bins,
+            binrange=(0, 1),
+            kde=True,
+            ax=axes[i],
+            color=color,  # "royalblue",
+            edgecolor="black",
+        )
+        axes[i].set_xlim(0, 1)  # Set range for histogram
+        axes[i].set_ylabel(f"{state} count")
 
     # Label the x-axis of the last subplot
     axes[-1].set_xlabel("Relative Time")

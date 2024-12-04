@@ -144,9 +144,11 @@ os.makedirs(statistical_model_path, exist_ok=True)
 # Load the transformed principal component (PC) data
 data = pd.read_parquet(output_dir / "processed_data" / "transformed_data.parquet")
 
+
 # Define the component names and sleep stages
-pc_names = ["pca0", "pca1", "pca2", "pca3", "pca4", "pca5"]
-ic_names = ["ica0", "ica1", "ica2", "ica3", "ica4", "ica5"]
+ic_names = list(filter(lambda x: x.startswith("ica"), data.columns))
+pc_names = [x.replace("i", "p") for x in ic_names]
+
 stages = ["W", "R", "N1", "N2", "N3"]
 
 # Convert 'stage' and 'patient' columns to categorical data type
@@ -253,8 +255,8 @@ for i, ic in enumerate(ic_names + pc_names):
 
     max_val = max(-data[ic].min(), data[ic].max()) * 1.1
     ax.set_xlim(-max_val, max_val)
-    if ic.startswith('p'):
-        i=-6
+    if ic.startswith("p"):
+        i -= 6
     ax.set_xlabel(f"{ic.split('a')[0].upper()} {i+1}")
     ax.set_ylabel("")
     fig.savefig(statistical_model_path / f"empirical_{ic}_stage_distribution.svg")

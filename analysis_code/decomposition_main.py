@@ -56,13 +56,16 @@ if __name__ == "__main__":
 
     # Get the output directory and create necessary directories for saving processed data
     output_path = Path(PARAMETERS["OUTPUT_DIR"])
+    feature_path = output_path / "features"
     os.makedirs(output_path, exist_ok=True)
     os.makedirs(output_path / "processed_data", exist_ok=True)
 
     # Find all feature matrix files with the ".features.csv" extension
-    feature_files = filter(
-        lambda x: x.startswith("E"), glob.glob("**/*.features.csv", recursive=True)
-    )
+    feature_files = os.listdir(feature_path)
+
+    # filter(
+    #     lambda x: x.startswith("E"), glob.glob("**/*.features.csv", recursive=True)
+    # )
 
     # Retrieve metadata columns from the parameters file
     metadata_columns: List[str] = PARAMETERS["METADATA_COLUMNS"]
@@ -78,12 +81,17 @@ if __name__ == "__main__":
         means_list: List[pd.DataFrame] = []
         stds_list: List[pd.DataFrame] = []
         quality: List[pd.DataFrame] = []
+        missing: dict = {}
 
         # Iterate over each feature matrix file, clean, and standardize the data
         for file in feature_files:
             # Load, clean, and standardize the feature data
-            clean_data, means, stds, dropped_segments, clipped = load_data_and_clean(
-                Path(file), metadata_columns=metadata_columns, parameters=PARAMETERS
+            clean_data, means, stds, dropped_segments, clipped, missing[file] = (
+                load_data_and_clean(
+                    feature_path / file,
+                    metadata_columns=metadata_columns,
+                    parameters=PARAMETERS,
+                )
             )
 
             # Append the cleaned data, means, and stds to the corresponding lists
@@ -104,13 +112,15 @@ if __name__ == "__main__":
 
         # Save the calculated means, stds, and quality metrics
         means = pd.concat(means_list)
-        means.to_parquet(output_path / "processed_data" / "means.parquet")
+        means.to_csv(output_path / "processed_data" / "means.csv")
 
         stds = pd.concat(stds_list)
-        stds.to_parquet(output_path / "processed_data" / "stds.parquet")
+        stds.to_csv(output_path / "processed_data" / "stds.csv")
 
         quality = pd.concat(quality)
-        quality.to_parquet(output_path / "processed_data" / "quality.parquet")
+        quality.to_csv(output_path / "processed_data" / "clipped.csv")
+
+        pd.DataFrame(missing).T.to_csv(output_path / "processed_data" / "missing.csv")
 
     # Perform decomposition (PCA/ICA) on the cleaned data
     (

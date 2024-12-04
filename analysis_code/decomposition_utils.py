@@ -108,12 +108,15 @@ def load_data_and_clean(
     clipped = pd.DataFrame(clipped).T
     clipped["file"] = str(path)
     # Clip the data to the range [-5, 5] to limit extreme values
+    missing = clean_data.isna().sum()
+    clean_data = clean_data.apply(pd.to_numeric)
+    clean_data = clean_data.interpolate("linear", axis=0)
     clean_data = clean_data.clip(lower=-5, upper=5)
 
     # Add metadata columns back to the cleaned data
     clean_data[metadata_columns] = raw_data[metadata_columns]
 
-    return clean_data, means, stds, dropped_segments, clipped
+    return clean_data, means, stds, dropped_segments, clipped, missing
 
 
 def rename_pc(auto_name: Union[str, object]) -> str:

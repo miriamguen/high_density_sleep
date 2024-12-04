@@ -95,8 +95,11 @@ def preprocess_eeg(
     """
     # Apply filtering and drift removal
     raw = raw.load_data().filter(
-        l_freq=0.5, h_freq=None, picks=["eeg", "ecg", "eog"], n_jobs=1
+        l_freq=0.5, h_freq=None, picks=["eeg", "ecg"], n_jobs=1
     )
+
+    raw = raw.load_data().filter(l_freq=0.3, h_freq=None, picks="eog", n_jobs=1)
+
     raw = raw.copy().filter(l_freq=10, h_freq=None, picks="emg", n_jobs=1)
 
     # Set average reference
@@ -222,6 +225,8 @@ def extract_eog_features(eog_epoch_spectrum: mne.time_frequency.EpochsTFR) -> di
         psd = eog_epoch_spectrum.get_data(picks=channel)
         features[f"EOG_{mapper[channel]}"] = psd[0, 0, :].sum()
 
+    # TOTEST: it could be that the relative and not abs power would be more informative here,
+    # in any way this should be refined and eog channel mey be better treated as additional EEG and extraction of the eye component may be optimal for the evaluation of cleaner eye moments
     return features
 
 

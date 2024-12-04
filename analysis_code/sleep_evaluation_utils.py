@@ -23,7 +23,7 @@ def bland_altman_plot(
     Parameters:
     -----------
     data1 : np.ndarray
-        Measurements from the first method (e.g., clustering).
+        Measurements from the first method (e.g., hidden states).
     data2 : np.ndarray
         Measurements from the second method (e.g., manual sleep labels).
     measure : str
@@ -59,8 +59,8 @@ def bland_altman_plot(
     )
 
     # Labeling the plot
-    plt.xlabel("Mean of clusters and sleep labels")
-    plt.ylabel("Difference between clusters and sleep labels")
+    plt.xlabel("Mean of hidden states and sleep labels")
+    plt.ylabel("Difference between hidden states and sleep labels")
     plt.ylim([-y_span, y_span])
     plt.title(f"Bland-Altman Plot for {measure}")
     plt.legend()
@@ -78,7 +78,7 @@ def calculate_icc(data1: pd.Series, data2: pd.Series) -> Tuple[float, pd.DataFra
     Parameters:
     -----------
     data1 : pd.Series
-        Measurements from the first method (e.g., clustering results).
+        Measurements from the first method (e.g., hidden states results).
     data2 : pd.Series
         Measurements from the second method (e.g., manual sleep labels).
 
@@ -114,7 +114,7 @@ def get_sleep_measures_for_patient(
     sampling_rate: float = 2.0,  # Samples per minute (e.g., 2 samples per minute)
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     """
-    Computes sleep measures for both manual sleep labels and cluster-derived sleep labels using YASA's
+    Computes sleep measures for both manual sleep labels and hidden states-derived sleep labels using YASA's
     `sleep_statistics` function.
 
     Parameters:
@@ -132,13 +132,13 @@ def get_sleep_measures_for_patient(
     Tuple[Dict[str, float], Dict[str, float]]:
         - sleep_measures: A dictionary of sleep measures calculated from the labeled sleep stages.
     """
-    # Convert the manual and cluster labels to YASA-compatible format
+    # Convert the manual and hidden states labels to YASA-compatible format
     labels = list(map(lambda x: stage_map[x], labels))
 
     # Define the sampling frequency in terms of hypnogram epochs (YASA uses samples per hour)
     sf_hyp = sampling_rate / 60  # Convert samples per minute to per hour
 
-    # Calculate sleep statistics for both manual and cluster-based labels using YASA
+    # Calculate sleep statistics for both manual and hidden states-based labels using YASA
     sleep_measures = sleep_statistics(labels, sf_hyp)
 
     return sleep_measures
@@ -161,7 +161,7 @@ def compare_sleep_and_unsupervised_measures(
     sleep_measures_all : pd.DataFrame
         DataFrame containing sleep measures based on manually labeled sleep stages.
     unsupervised_measures_all : pd.DataFrame
-        DataFrame containing sleep measures based on clusters from unsupervised learning.
+        DataFrame containing sleep measures based on hidden states  minimally-supervised learning.
     save_path : where to save the results
     Returns:
     --------
@@ -179,7 +179,7 @@ def compare_sleep_and_unsupervised_measures(
     # Iterate over the columns (measures) and perform paired tests
     for col in sleep_measures_all.columns:
         if col not in excluded_cols:
-            # Extract and sort both the sleep measures and cluster measures by index (patient)
+            # Extract and sort both the sleep measures and hidden states measures by index (patient)
             gold_standard_results = sleep_measures_all[col].sort_index()
             new_test_results = unsupervised_measures_all[col].sort_index()
 
@@ -206,11 +206,11 @@ def compare_sleep_and_unsupervised_measures(
             )
 
             # Set plot labels and title
-            plt.xlabel(f"{col} assessed with sleep labels")
-            plt.ylabel(f"{col} assessed with clusters")
+            plt.xlabel(f"{col} by sleep labels")
+            plt.ylabel(f"{col} by GHMM")
             plt.xlim((min_val - margin, max_val + margin))
             plt.ylim((min_val - margin, max_val + margin))
-            plt.title(f"Comparing {col} estimation (Manual Vs. Unsupervised)")
+            plt.title(f"Comparing {col} estimation (Visual Vs. GHMM)")
             plt.grid(True)
 
             # Save the scatter plot

@@ -1,11 +1,10 @@
 DATA_DIR: C:/Users/USER/high_density_sleep
 METADATA_FILE_NAME: "Details information for healthy subjects.csv"
 
-SLEEP_LABELS_SUFFIX: ".txt"
-OUTPUT_DIR: 'output_no_norm'
+SLEEP_LABELS_SUFFIX': ".txt"
+OUTPUT_DIR: 'output'
 MODEL_DIR: 'models'
 FIGURE_DIR: 'figures'
-
 window_length: 30 # in seconds
 
 emg_channels:

@@ -147,4 +147,16 @@ for subject in df["Subjects ID"]:
     results.append(transition_probs)
 
 result_df = pd.concat(results)
+
+transition_probs_mean = (
+    result_df.reset_index().drop(columns=["subject"]).groupby("index").mean()
+)
+plot_transition_graph(
+    transition_probs_mean.loc[stage_order, stage_order],
+    f"output/transition/from_hypno/mean_transition_prob.svg",
+)
+
+
 result_df.to_csv("output/transition/transition_prob_time_by_subject.csv")
+
+transition_probs_mean.to_csv("output/transition/transition_prob_time_mean.csv")
