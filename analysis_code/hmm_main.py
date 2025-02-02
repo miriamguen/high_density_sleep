@@ -66,7 +66,7 @@ data = (
     .reset_index(drop=False)
 )
 
-# use the main components, seee if there arre saved experiment results an only run
+# use the main components, see if there are saved experiment results an only run
 search_range = np.arange(search_range[0], search_range[1])
 if os.path.exists(hmm_path / alias / f"{alias}_state_scan.csv"):
     results_df = pd.read_csv(hmm_path / alias / f"{alias}_state_scan.csv", index_col=0)
@@ -341,7 +341,7 @@ sleep_measures_cross_subject = {}
 sleep_measures_shared_model = {}
 sleep_measures_personalized = {}
 
-model_metrics = {"cross_subject":{}, "shared_model":{}, "personalized":{}}
+model_metrics = {"cross_subject": {}, "shared_model": {}, "personalized": {}}
 
 for subject in subjects:
 
@@ -396,15 +396,17 @@ for subject in subjects:
             return_samples=True,
         )
 
+        subject_state_to_stage
+
         results["time"] = subject_data.time.values
         results.to_csv(subject_path / retrain / "state_assignment_results.csv")
         model_metrics[retrain][subject] = {
-                "bic": bic,
-                "aic": aic,
-                "adjusted_log_likelihood": adjusted_log_likelihood,
-                "accuracy": accuracy,
-                "kappa": kappa,
-            }
+            "bic": bic,
+            "aic": aic,
+            "adjusted_log_likelihood": adjusted_log_likelihood,
+            "accuracy": accuracy,
+            "kappa": kappa,
+        }
 
         state_info = pd.DataFrame(subject_state_to_stage, index=["mapped_states_all"]).T
         state_info["highest_rate"] = results.groupby("hidden_states")["time"].apply(
@@ -414,10 +416,15 @@ for subject in subjects:
             f"{k} ({v})" for k, v in subject_state_to_stage.items()
         ]
         state_info = state_info.reset_index().rename(columns={"index": "hidden_state"})
-        state_info = state_info.sort_values(by="highest_rate")
 
-        state_order_id = state_info["state_ids_all"].values
-        state_order_num = state_info["hidden_state"].values
+        if retrain == "personalized":
+            state_info = state_info.sort_values(by="highest_rate")
+            state_order_id_s = state_info["state_ids_all"].values
+            state_order_num_s = state_info["hidden_state"].values
+        else:
+            state_info = state_info.loc[state_order_num, :]
+            state_order_id_s = state_order_id
+            state_order_num_s = state_order_num
 
         state_label_counts = plot_hidden_state_stage_distribution(
             subject_model,
@@ -449,11 +456,16 @@ for subject in subjects:
             for k, v in subject_state_to_stage.items()
         }
         if retrain == "personalized":
+            state_order_p = list(reversed(list(state_order_id)))
+            subject_hidden_stage_color_map = {
+                s: PARAMETERS["stage_color_map"][s.split("(")[1].split(")")[0]]
+                for s in state_order_p
+            }
             plot_parameter_means_and_ci(
                 subject_model,
                 feature_names=ic_names,
                 stage_color_map=subject_hidden_stage_color_map,
-                state_order=list(reversed(list(state_order_id))),
+                state_order=state_order_p,
                 save_path=subject_path / retrain / "state_parameter_distribution.svg",
             )
             sleep_measures_personalized[subject] = get_sleep_measures_for_patient(
@@ -475,7 +487,7 @@ for subject in subjects:
             results,
             bins=30,
             stage_color_map=stage_color_map,
-            state_order=state_order_num,
+            state_order=state_order_num_s,
             save_path=subject_path / retrain / "state_time_distribution.svg",
         )
 
@@ -492,7 +504,7 @@ for subject in subjects:
         # estimate the transition probabilities from the predicted sequence for the patient
         transition_probs = estimate_transition_probabilities(results["hidden_states"])
 
-        transition_probs = transition_probs.loc[state_order_num, state_order_num]
+        transition_probs = transition_probs.loc[state_order_num_s, state_order_num_s]
 
         plot_transition_graph(
             transition_probs,
@@ -517,14 +529,18 @@ for subject in subjects:
         del subject_model
 
 sleep_measure_path = hmm_path / alias / "sleep_measures"
-_ = [pd.DataFrame(model_metrics[key]).to_csv(sleep_measure_path /  f"{key}_model_metrics.csv") for key in model_metrics.keys()]
+_ = [
+    pd.DataFrame(model_metrics[key]).to_csv(
+        sleep_measure_path / f"{key}_model_metrics.csv"
+    )
+    for key in model_metrics.keys()
+]
 
 # estimate bland_altman_plot, calculate_icc
 sleep_measures_hypno = pd.DataFrame(sleep_measures_hypno).T.fillna(0)
 sleep_measures_shared_model = pd.DataFrame(sleep_measures_shared_model).T.fillna(0)
 sleep_measures_personalized = pd.DataFrame(sleep_measures_personalized).T.fillna(0)
 sleep_measures_cross_subject = pd.DataFrame(sleep_measures_cross_subject).T.fillna(0)
-
 
 
 os.makedirs(sleep_measure_path, exist_ok=True)
