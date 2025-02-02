@@ -89,7 +89,7 @@ for states_path, eeg_path in zip(subject_state_files, subject_edf_files):
     raw.set_meas_date(raw.info["meas_date"] + timedelta(hours=5))
     df["time_from_file_onset_seconds"] = (feature_df["time"] - raw.info[
         "meas_date"
-    ].replace(tzinfo=None)).apply(lambda x: int(x.total_seconds()))
+    ].replace(tzinfo=None)).apply(lambda x: int(x.total_seconds())).values
 
     most_probable_epochs = df.loc[
         df.groupby("hidden_states")[list(map(str, range(7)))].idxmax().max(axis=1)
