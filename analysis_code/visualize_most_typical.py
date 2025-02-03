@@ -83,13 +83,23 @@ for states_path, eeg_path in zip(subject_state_files, subject_edf_files):
     feature_df = pd.read_csv(
         data_dir / f"output_short/features/{subject}.csv", parse_dates=["time"]
     )
+
+    if feature_df["time"].values[0].hour < 17:
+        time_correction = 5
+    else:
+        time_correction = 0
+
     feature_df = feature_df[feature_df["stage"] != "L"]
-    feature_df["time"] = feature_df["time"].apply(lambda x: x + timedelta(hours=5))
+    feature_df["time"] = feature_df["time"].apply(
+        lambda x: x + timedelta(hours=time_correction)
+    )
     raw = mne.io.read_raw_edf(eeg_path, preload=True)
-    raw.set_meas_date(raw.info["meas_date"] + timedelta(hours=5))
-    df["time_from_file_onset_seconds"] = (feature_df["time"] - raw.info[
-        "meas_date"
-    ].replace(tzinfo=None)).apply(lambda x: int(x.total_seconds())).values
+    raw.set_meas_date(raw.info["meas_date"] + timedelta(hours=time_correction))
+    df["time_from_file_onset_seconds"] = (
+        (feature_df["time"] - raw.info["meas_date"].replace(tzinfo=None))
+        .apply(lambda x: int(x.total_seconds()))
+        .values
+    )
 
     most_probable_epochs = df.loc[
         df.groupby("hidden_states")[list(map(str, range(7)))].idxmax().max(axis=1)
