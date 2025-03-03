@@ -290,7 +290,7 @@ def select_best(results: pd.DataFrame) -> np.ndarray:
     groups_b = np.where(improved)[0]
     bic_improve = bic.iloc[list(groups_b)]
     candidates_b = bic_improve[
-        (bic_improve.diff() / bic_improve) < -0.001
+        (bic_improve.diff() / bic_improve) < -0.0001
     ]  # state increase induces at least 0.1% improvement
 
     aic = results.groupby("n_states")["aic"].median()
@@ -309,7 +309,7 @@ def select_best(results: pd.DataFrame) -> np.ndarray:
 
     groups_a = np.where(improved)[0]
     aic_improve = aic.iloc[list(groups_a)]
-    candidates_a = aic_improve[(aic_improve.diff() / aic_improve) < -0.001]
+    candidates_a = aic_improve[(aic_improve.diff() / aic_improve) < -0.0001]
 
     candidates = list(
         set(candidates_a.index.values).intersection(candidates_b.index.values)
@@ -480,8 +480,13 @@ def plot_hidden_state_stage_distribution(
         len(unique_states), 1, figsize=(4.5, len(unique_states) * 4.5)
     )
 
+    state_order_ = list(filter( lambda x: int(x.split(" ")[0]) in unique_states, state_order))
+
     state_label_counts = {}
-    for i, state in enumerate(state_order):
+    for i, state in enumerate(state_order_):
+        if int(state.split(" ")[0]) not in results["hidden_states"]:
+            continue
+
         state_data = results[results["hidden_states"] == int(state.split(" ")[0])][
             "labels"
         ]

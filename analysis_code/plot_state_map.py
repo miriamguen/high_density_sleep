@@ -42,7 +42,7 @@ data = (
 #         save_path=output_dir / "stage_maps",
 #     )
 
-ica_pca = "pca"
+ica_pca = "ica"
 hmm_dir = output_dir / "hmm" / f"{ica_pca }_5" / "common_model"
 
 labels = pd.read_csv(

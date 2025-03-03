@@ -507,7 +507,8 @@ for subject in subjects:
         # estimate the transition probabilities from the predicted sequence for the patient
         transition_probs = estimate_transition_probabilities(results["hidden_states"])
 
-        transition_probs = transition_probs.loc[state_order_num_s, state_order_num_s]
+        transition_probs = transition_probs.sort_values(by=list(transition_probs.index.values))
+        transition_probs = transition_probs.loc[transition_probs.index, transition_probs.index]
 
         plot_transition_graph(
             transition_probs,
