@@ -21,27 +21,6 @@ from decomposition_utils import (
     rename_pc,
 )
 
-""" Main script to load, clean, and preprocess feature matrices for decomposition analysis.
-    This script loads all feature matrices, applies cleaning and standardization, and combines
-    the data for further analysis.
-"""
-
-import os
-import glob
-from pathlib import Path
-import yaml
-from typing import List
-
-import pandas as pd
-import numpy as np
-
-from decomposition_utils import (
-    load_data_and_clean,
-    decompose_all_patients,
-    plot_low_dimension_map,
-    plot_component_weight_map,
-    rename_pc,
-)
 
 if __name__ == "__main__":
     """

@@ -38,7 +38,7 @@ with open("analysis_code/parameters.yaml", "r") as file:
 output_dir = Path(PARAMETERS["OUTPUT_DIR"])
 data = pd.read_parquet(output_dir / "processed_data" / "transformed_data.parquet")
 label_col = "stage"
-pca_ica = "pca"
+pca_ica = "ica"
 search_range = (2, 16)
 
 
@@ -131,6 +131,9 @@ bic, aic, adjusted_log_likelihood, accuracy, kappa, results = evaluate(
 )
 
 results["time"] = data.time.values
+results["time_from_onset"] = data.time_from_onset.values
+results["patient"] = data.patient.values
+
 results.to_csv(common_path / "state_assignment_results.csv")
 model_metrics = pd.Series(
     {
@@ -496,7 +499,7 @@ for subject in subjects:
             bins=300,
             stage_color_map=stage_color_map,
             state_order=["W", "N3", "N2", "N1", "R"],
-            save_path=common_path / "sleep_stage_time_distribution.svg",
+            save_path=subject_path / retrain / "sleep_stage_time_distribution.svg",
         )
 
         # 4. Plot the cross patient state transition probability matrix
@@ -529,6 +532,7 @@ for subject in subjects:
         del subject_model
 
 sleep_measure_path = hmm_path / alias / "sleep_measures"
+os.makedirs(sleep_measure_path, exist_ok=True)
 _ = [
     pd.DataFrame(model_metrics[key]).to_csv(
         sleep_measure_path / f"{key}_model_metrics.csv"

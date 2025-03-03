@@ -158,8 +158,6 @@ def evaluate(
     )
 
     n_data_points = X.shape[0]
-    stats = model.n_components
-    features = model.n_features
 
     bic = model.bic(X)
     aic = model.aic(X)
@@ -290,6 +288,10 @@ def select_best(results: pd.DataFrame) -> np.ndarray:
             false_count += 1
 
     groups_b = np.where(improved)[0]
+    bic_improve = bic.iloc[list(groups_b)]
+    candidates_b = bic_improve[
+        (bic_improve.diff() / bic_improve) < -0.001
+    ]  # state increase induces at least 0.1% improvement
 
     aic = results.groupby("n_states")["aic"].median()
     improved = [True]
@@ -306,26 +308,14 @@ def select_best(results: pd.DataFrame) -> np.ndarray:
             false_count += 1
 
     groups_a = np.where(improved)[0]
-    groups = set(groups_a).intersection(groups_b)
+    aic_improve = aic.iloc[list(groups_a)]
+    candidates_a = aic_improve[(aic_improve.diff() / aic_improve) < -0.001]
 
-    if "kappa" in results.columns:
-        kappa_grouped = results.groupby("n_states")["kappa"].min()
-        improved = [True]
-        false_count = 0
-        l = kappa_grouped.values[0]
-        for m_l in kappa_grouped.values[1:]:
-            if m_l > l:
-                l = m_l
-                improved.append(True)
-                false_count = 0
-            else:
-                improved.append(False)
-                false_count += 1
+    candidates = list(
+        set(candidates_a.index.values).intersection(candidates_b.index.values)
+    )
 
-        groups_k = np.where(improved)[0]
-        groups = set(groups_k).intersection(groups)
-
-    return bic.index.values[list(groups)[-1]]
+    return max(candidates)
 
 
 def plot_evaluation_metrics(

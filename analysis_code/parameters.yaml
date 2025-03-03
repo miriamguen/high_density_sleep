@@ -3,10 +3,10 @@ METADATA_FILE_NAME: "Details information for healthy subjects.csv"
 DROPBOX_DIR: 'D:/Ben Gurion University of Negev Dropbox/Miriam Guen/Miriam Guendelman/Projects/high_density_sleep'
 
 SLEEP_LABELS_SUFFIX': ".txt"
-OUTPUT_DIR: 'output_short'
+OUTPUT_DIR: 'output' #_short'
 MODEL_DIR: 'models'
 FIGURE_DIR: 'figures'
-window_length: 4 # in seconds
+window_length: 30 # in seconds
 
 emg_channels:
   - "CHEMG1"
@@ -60,14 +60,14 @@ valid_sleep_stages:
   - "R"
 
 stage_color_map:
-  "W": "orange"
-  "R": "darkred"
+  "W":  "orange"
+  "R":  "darkred"
   "N1": "magenta"
   "N2": "royalblue"
   "N3": "midnightblue"
 
 
-state_color_map:
+state_color_map_pca:
   "state 0-W": "darkorange"
   "state 3-W": "salmon"
   "state 6-R": "red"
@@ -75,6 +75,16 @@ state_color_map:
   "state 2-N2": "royalblue"
   "state 4-N3": "midnightblue"
   "state 1-N3": "navy"
+
+
+state_color_map_ica:
+  "state 5-W": "darkorange"
+  "state 3-W": "salmon"
+  "state 4-R": "red"
+  "state 2-N1": "magenta"
+  "state 6-N2": "royalblue"
+  "state 1-N2": "midnightblue"
+  "state 0-N3": "navy"
 
 sleep_stage_plot_values:
   "W": 5

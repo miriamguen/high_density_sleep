@@ -20,10 +20,11 @@ with open("analysis_code/parameters.yaml", "r") as file:
 
 
 edf_dir = Path(PARAMETERS["DATA_DIR"])
-data_dir = Path(PARAMETERS["DROPBOX_DIR"])
+data_dir = Path(PARAMETERS["DATA_DIR"])
+pca_ica = "ica"
 
 subject_state_files = list(
-    data_dir.rglob("output_short/**/shared_model/state_assignment_results.csv")
+    data_dir.rglob("output_short/hmm/ica_5/subjects/*/shared_model/state_assignment_results.csv")
 )
 
 
@@ -73,7 +74,7 @@ elect_type = {
 }
 
 figure_dir = (
-    Path(os.getcwd().replace("high_density_sleep", "")) / "eeg-viewer" / "figures"
+    Path(os.getcwd().replace("high_density_sleep", "")) / f"eeg-viewer-{pca_ica}" / "figures"
 )
 os.makedirs(figure_dir, exist_ok=True)
 
@@ -84,7 +85,7 @@ for states_path, eeg_path in zip(subject_state_files, subject_edf_files):
         data_dir / f"output_short/features/{subject}.csv", parse_dates=["time"]
     )
 
-    if feature_df["time"].values[0].hour < 17:
+    if pd.to_datetime(feature_df["time"].values[0]).hour < 17:
         time_correction = 5
     else:
         time_correction = 0
@@ -142,7 +143,7 @@ for states_path, eeg_path in zip(subject_state_files, subject_edf_files):
     events_from_annot, event_dict = mne.events_from_annotations(raw)
 
     event_colors = {
-        desc: PARAMETERS["state_color_map"][desc] for desc in event_dict.keys()
+        desc: PARAMETERS[f"state_color_map_{pca_ica}"][desc] for desc in event_dict.keys()
     }
     custom_colors = list(event_colors.values())
     mpl.rcParams["axes.prop_cycle"] = mpl.cycler(color=custom_colors)
