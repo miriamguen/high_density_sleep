@@ -3,10 +3,11 @@ METADATA_FILE_NAME: "Details information for healthy subjects.csv"
 DROPBOX_DIR: 'D:/Ben Gurion University of Negev Dropbox/Miriam Guen/Miriam Guendelman/Projects/high_density_sleep'
 
 SLEEP_LABELS_SUFFIX': ".txt"
-OUTPUT_DIR: 'output_short'
+OUTPUT_DIR: 'output_short_overlap'
 MODEL_DIR: 'models'
 FIGURE_DIR: 'figures'
 window_length: 4 # in seconds
+step_size: 1 # in seconds
 
 emg_channels:
   - "CHEMG1"

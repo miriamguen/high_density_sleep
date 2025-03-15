@@ -42,6 +42,7 @@ if __name__ == "__main__":
     OUTPUT_PATH = Path(PARAMETERS["OUTPUT_DIR"]) / "features"
     os.makedirs(OUTPUT_PATH, exist_ok=True)
     window_length = PARAMETERS["window_length"]
+    step_size = PARAMETERS["step_size"]
     # Extract channel groups from parameters
     emg_channels = PARAMETERS["emg_channels"]
     eog_channels = PARAMETERS["eog_channels"]
@@ -73,18 +74,44 @@ if __name__ == "__main__":
         recording_start = np.datetime64(raw.info["meas_date"])
 
         # Preprocess EEG
-        epochs, means, stds, recording_time = preprocess_eeg(raw, window_length)
+        epochs, means, stds, recording_time, events = preprocess_eeg(
+            raw, window_length, overlap=window_length - step_size
+        )
         window_samples = int(epochs[0].get_data().shape[-1])
         optimal_window = int(raw.info["sfreq"] * 4)
+        # del raw
         # Compute power spectral density (PSD) for each signal type
-        spectrums = epochs.compute_psd(
-            method="welch",
-            fmin=0.5,
-            fmax=40,
-            n_fft=min(optimal_window, window_samples),
-            remove_dc=False,
-            picks="eeg",
-        )
+        # Extract features for each epoch
+        features = {}
+        spectrums = []
+
+        # Process the epochs in batches
+        for i in np.arange(0, len(events), 5000):
+            # Compute PSD for the current batch without averaging across epochs.
+            psd = epochs[i : i + 5000].compute_psd(
+                method="welch",
+                n_fft=min(optimal_window, window_samples),
+                fmin=0.5,
+                fmax=40,
+                remove_dc=False,
+                picks="eeg",
+                average=False,
+                verbose=False,
+            )
+            spectrums.append(psd)
+
+        spectrums = np.squeeze(np.concatenate(spectrums))
+        print("extracting spectral...")
+        for i in tqdm(range(len(spectrums))):
+            features[i] = extract_spectral_features(
+                spectrums[i, :, :],
+                freqs=psd.freqs,
+                ch_names=psd.ch_names,
+                band_dict=PARAMETERS["bands"],
+            )
+
+        del spectrums
+
         emg_spectrums = epochs.compute_psd(
             method="welch",
             fmin=10,
@@ -93,6 +120,11 @@ if __name__ == "__main__":
             remove_dc=False,
             picks="emg",
         )
+
+        print("extracting emg...")
+        for i in tqdm(range(len(emg_spectrums))):
+            features[i].update(extract_emg_features(emg_spectrums[i]))
+
         eog_spectrums = epochs.compute_psd(
             method="welch",
             fmin=0.3,
@@ -102,21 +134,11 @@ if __name__ == "__main__":
             picks="eog",
         )
 
-        # Extract features for each epoch
-        features = {}
-        print("extracting spectral...")
-        for i in tqdm(range(len(spectrums))):
-            features[i] = extract_spectral_features(
-                spectrums[i], band_dict=PARAMETERS["bands"]
-            )
-
-        print("extracting emg...")
-        for i in tqdm(range(len(emg_spectrums))):
-            features[i].update(extract_emg_features(emg_spectrums[i]))
-
         print("extracting eog...")
         for i in tqdm(range(len(eog_spectrums))):
             features[i].update(extract_eog_features(eog_spectrums[i]))
+
+        del eog_spectrums
 
         print("extracting ecg...")
         for i in tqdm(range(len(epochs))):

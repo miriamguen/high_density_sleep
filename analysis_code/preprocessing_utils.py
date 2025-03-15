@@ -94,13 +94,11 @@ def preprocess_eeg(
             Total recording time in minutes.
     """
     # Apply filtering and drift removal
-    raw = raw.load_data().filter(
-        l_freq=0.5, h_freq=None, picks=["eeg", "ecg"], n_jobs=1
-    )
+    raw = raw.load_data().filter(l_freq=0.5, h_freq=None, picks=["eeg", "ecg"])
 
-    raw = raw.load_data().filter(l_freq=0.3, h_freq=None, picks="eog", n_jobs=1)
+    raw = raw.filter(l_freq=0.3, h_freq=None, picks="eog")
 
-    raw = raw.copy().filter(l_freq=10, h_freq=None, picks="emg", n_jobs=1)
+    raw = raw.filter(l_freq=10, h_freq=None, picks="emg")
 
     # Set average reference
     raw = raw.set_eeg_reference("average", projection=False)
@@ -118,11 +116,10 @@ def preprocess_eeg(
     )
 
     # Apply filtering by signal type (EEG, EOG, EMG, ECG)
-    raw = raw.filter(l_freq=None, h_freq=40, picks="eeg", n_jobs=1)
-    raw = raw.filter(l_freq=None, h_freq=15, picks="eog", n_jobs=1)
-    raw = raw.copy().filter(l_freq=None, h_freq=50, picks="emg", n_jobs=1)
-    raw = raw.filter(l_freq=None, h_freq=20, picks="ecg", n_jobs=1)
-
+    raw = raw.filter(l_freq=None, h_freq=40, picks="eeg")
+    raw = raw.filter(l_freq=None, h_freq=15, picks="eog")
+    raw = raw.filter(l_freq=None, h_freq=50, picks="emg")
+    raw = raw.filter(l_freq=None, h_freq=20, picks="ecg")
     # Normalize the data
     raw_data = raw.get_data()
     recording_time = raw_data.shape[1] / (
@@ -140,11 +137,11 @@ def preprocess_eeg(
         raw, events, tmin=0, tmax=epoch_length, baseline=None, detrend=None
     )
 
-    return epochs, means, stds, recording_time
+    return epochs, means, stds, recording_time, events
 
 
 def extract_spectral_features(
-    epoch_spectrum: mne.time_frequency.EpochsTFR, band_dict: dict[str:tuple]
+    psd: np.array, freqs: np.array, ch_names: np.array, band_dict: dict[str:tuple]
 ) -> dict:
     """
     Extract spectral features from an epoch, including power in frequency bands, log transformations,
@@ -163,35 +160,34 @@ def extract_spectral_features(
     """
 
     features = {}
-    freqs = epoch_spectrum.freqs
 
-    for channel in epoch_spectrum.ch_names:
-        psd = epoch_spectrum.get_data(picks=channel)
-        total_power = psd.sum()
+    for i, channel in enumerate(ch_names):  # epoch_spectrum.ch_names:
+        # psd = epoch_spectrum.get_data(picks=channel)
+        total_power = psd[i].sum()
         if total_power == 0:
             psd = np.ones_like(psd)
             total_power = psd.sum()
 
-        normalized_psd = psd / total_power
+        normalized_psd = psd[i] / total_power
         low_non_zero_value = np.min(normalized_psd[np.nonzero(normalized_psd)])
-        log_psd = np.log(normalized_psd * (np.exp(1) / low_non_zero_value))
+        log_psd = np.log(normalized_psd * (np.exp(1) / low_non_zero_value)) # get a stable relative log psd
 
         log_total_power = log_psd.sum()
         normalized_log_psd = log_psd / log_total_power
 
         features[f"{channel}_root_total_power"] = np.sqrt(total_power)
-        features[f"{channel}_spectral_entropy"] = entropy(normalized_psd[0, 0, :])
+        features[f"{channel}_spectral_entropy"] = entropy(normalized_psd)
 
         for band_name, (fmin, fmax) in band_dict.items():
             idx_band = np.logical_and(freqs >= fmin, freqs <= fmax)
-            band_power = normalized_psd[0, 0, idx_band].sum()
-            log_band_power = normalized_log_psd[0, 0, idx_band].sum()
+            band_power = normalized_psd[idx_band].sum()
+            log_band_power = normalized_log_psd[idx_band].sum()
             features[f"{channel}_{band_name}_power"] = band_power
             features[f"{channel}_log_{band_name}_power"] = log_band_power
 
         freqs_reshaped = np.log(freqs.reshape(-1, 1))
         lin_reg_log = LinearRegression().fit(
-            freqs_reshaped, len(freqs_reshaped) * normalized_log_psd[0, 0, :]
+            freqs_reshaped, len(freqs_reshaped) * normalized_log_psd
         )
 
         features[f"{channel}_log_spectral_slope"] = lin_reg_log.coef_[0]
