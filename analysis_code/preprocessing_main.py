@@ -154,24 +154,24 @@ if __name__ == "__main__":
         hypno.set_index("time", inplace=True)
 
         # resample the hypnogram based on window length:
-        if window_length != 30:
+        if step_size != 30:
             hypno = hypno.reindex(
                 hypno.index.union(
-                    [hypno.index[-1] + np.timedelta64(30 - window_length, "s")]
+                    [hypno.index[-1] + np.timedelta64(30 - step_size, "s")]
                 )
             ).ffill()
-            hypno = hypno.resample(f"{window_length}s", origin="start").ffill()
-            hypno["epoch_length"] = window_length
+            hypno = hypno.resample(f"{step_size}s", origin="start").ffill()
+            hypno["epoch_length"] = step_size
             hypno["time_from_onset"] = np.arange(
                 hypno.loc[recording_start, "time_from_onset"],
-                len(hypno) * window_length,
-                window_length,
+                len(hypno) * step_size,
+                step_size,
             )
 
         # Create feature matrix
         feature_matrix = pd.DataFrame(features).T.reset_index(drop=False)
         feature_matrix["time"] = feature_matrix["index"].apply(
-            lambda x: recording_start + np.timedelta64(x * window_length, "s")
+            lambda x: recording_start + np.timedelta64(x * step_size, "s")
         )
         feature_matrix = feature_matrix.set_index("time").drop(columns=["index"])
         subject = name.split("\\")[0]
