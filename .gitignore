@@ -3,7 +3,6 @@
 /Artifact matrix
 /EPCTL*
 
-/output
-/output_short
 /analysis_code/__pycache__
 /paper_figures
+/output*
