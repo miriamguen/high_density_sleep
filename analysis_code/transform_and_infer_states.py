@@ -18,7 +18,7 @@ with open("analysis_code/parameters.yaml", "r") as file:
 
 data_dir = Path(PARAMETERS["DATA_DIR"])
 model_version = "output_short"
-data_vresion = "output_short_overlap"
+data_vresion = "output_short"
 pca_ica = "ica"
 label_col = "stage"
 
@@ -67,15 +67,15 @@ for file in data_path.glob("*.csv"):
     metadata = clean_data[metadata_columns]
     pca_data = pd.DataFrame(
         data=np.dot(
-            a=clean_data.drop(columns=metadata_columns),
-            b=pca_wights.iloc[:, 0 : len(ica_wights)],
+            clean_data.drop(columns=metadata_columns),
+            pca_wights.iloc[:, 0 : len(ica_wights)],
         ),
         index=clean_data.index,
         columns=pca_wights.columns[: len(ica_wights)],
     )
 
     ica_data = pd.DataFrame(
-        data=np.dot(a=pca_data, b=ica_wights),
+        data=np.dot(pca_data, ica_wights),
         index=pca_data.index,
         columns=ica_wights.columns,
     )
@@ -89,7 +89,7 @@ for file in data_path.glob("*.csv"):
         axis=1,
     )
 
-    lengths = patient_data.groupby("patient").size().tolist()
+    lengths = None  # clean_data.groupby("patient").size().tolist()
     bic, aic, adjusted_log_likelihood, accuracy, kappa, results = evaluate(
         hmm_model,
         state_to_stage,

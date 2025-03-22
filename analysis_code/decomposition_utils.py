@@ -89,7 +89,7 @@ def load_data_and_clean(
     stds.loc["simple_stds", :] = np.std(raw_data[feature_col], axis=0)
     stds["file"] = str(path)
 
-    # # Z-score the data using global mean and std
+    # Z-score the data using global mean and std
     # clean_data = (
     #     raw_data.loc[:, feature_col] - means.loc["global_mean", feature_col]
     # ) / stds.loc["global_stds", feature_col]
@@ -395,7 +395,7 @@ def decompose_all_patients(
         index=pc_names,
         columns=pca_model.feature_names_in_,
     ).T
-
+    pc_weights.to_csv(model_save_path / "pca_weights.csv")
     # Map sleep stages to y-tick labels for plotting
     sleep_stge_plot_values = parameters["sleep_stage_plot_values"]
     hypno_values = data[hypno_col].apply(lambda x: sleep_stge_plot_values[x]).values
@@ -451,7 +451,7 @@ def decompose_all_patients(
     # Save ICA component weights
     ic_weights = pd.DataFrame(data=W[ind, :], index=ic_names, columns=pc_names_ic).T
     ic_weights.to_csv(model_save_path / "pca_to_ica_weights.csv")
-
+    
     # Adjust ICA component signs for consistency with hypnogram
     for i, ic in enumerate(ic_names):
         direct = ic_corr[i]

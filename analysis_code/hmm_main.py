@@ -35,7 +35,8 @@ from sleep_evaluation_utils import (
 with open("analysis_code/parameters.yaml", "r") as file:
     PARAMETERS = yaml.safe_load(file)
 
-output_dir = Path(PARAMETERS["OUTPUT_DIR"])
+#output_dir = Path(PARAMETERS["OUTPUT_DIR"])
+output_dir =Path(PARAMETERS["OUTPUT_DIR"]).parent / "output_short"
 data = pd.read_parquet(output_dir / "processed_data" / "transformed_data.parquet")
 label_col = "stage"
 pca_ica = "ica"
@@ -120,6 +121,12 @@ model_all, state_to_stage, patient_mapping = train_and_map(
     data[ic_names], data[label_col], lengths, best_groups
 )
 
+# save the common model
+with open(common_path / "model.pkl", "wb") as file:
+    pickle.dump(model_all, file)
+
+with open(common_path / "model_mapping.pkl", "wb") as file:
+    pickle.dump(state_to_stage, file)
 
 bic, aic, adjusted_log_likelihood, accuracy, kappa, results = evaluate(
     model_all,
