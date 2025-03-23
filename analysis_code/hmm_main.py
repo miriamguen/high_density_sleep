@@ -36,7 +36,7 @@ with open("analysis_code/parameters.yaml", "r") as file:
     PARAMETERS = yaml.safe_load(file)
 
 #output_dir = Path(PARAMETERS["OUTPUT_DIR"])
-output_dir =Path(PARAMETERS["OUTPUT_DIR"]).parent / "output_short"
+output_dir =Path(PARAMETERS["OUTPUT_DIR"]) #.parent / "output_short_overlap"
 data = pd.read_parquet(output_dir / "processed_data" / "transformed_data.parquet")
 label_col = "stage"
 pca_ica = "ica"
