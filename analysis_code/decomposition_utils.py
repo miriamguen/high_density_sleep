@@ -29,6 +29,7 @@ def load_data_and_clean(
     path: Path,
     metadata_columns: List[str],
     parameters: Dict[str, Union[List[str], str]],
+    electrodes: List[str] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, int, pd.DataFrame]:
     """
     Load the raw data from a CSV file, clean the data by excluding segments without valid sleep labels,
@@ -64,6 +65,12 @@ def load_data_and_clean(
     feature_col = list(
         filter(lambda x: x not in metadata_columns, raw_data.columns.values)
     )
+    if electrodes:
+        feature_col = [
+            col
+            for col in feature_col
+            if col.split("_")[0] in electrodes + ["RLEG", "LLEG", "CHEMG", "EOG", "ECG"]
+        ]
 
     # Exclude epochs that don't have valid sleep stage labels (e.g., W, N1, N2, N3, R)
     valid_stages = parameters["valid_sleep_stages"]
@@ -451,7 +458,7 @@ def decompose_all_patients(
     # Save ICA component weights
     ic_weights = pd.DataFrame(data=W[ind, :], index=ic_names, columns=pc_names_ic).T
     ic_weights.to_csv(model_save_path / "pca_to_ica_weights.csv")
-    
+
     # Adjust ICA component signs for consistency with hypnogram
     for i, ic in enumerate(ic_names):
         direct = ic_corr[i]

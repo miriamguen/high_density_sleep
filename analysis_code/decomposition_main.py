@@ -1,13 +1,13 @@
-""" Main script to load, clean, and preprocess feature matrices for decomposition analysis.
-    This script loads all feature matrices, applies cleaning and standardization, and combines
-    the data for further analysis.
+"""Main script to load, clean, and preprocess feature matrices for decomposition analysis.
+This script loads all feature matrices, applies cleaning and standardization, and combines
+the data for further analysis.
 """
 
 import os
 import glob
 from pathlib import Path
 import yaml
-
+from tqdm import tqdm
 from typing import List
 
 import pandas as pd
@@ -28,23 +28,20 @@ if __name__ == "__main__":
     This script loads all feature matrices, applies cleaning and standardization, and combines
     the data for further analysis.
     """
+    # define the electrodes to use, if None, all electrodes will be used
+    use_electrodes = ["F3", "F4", "C3", "C4", "O1", "O2"]
 
     # Load analysis parameters from the YAML configuration file
     with open("analysis_code/parameters.yaml", "r") as file:
         PARAMETERS = yaml.safe_load(file)
 
     # Get the output directory and create necessary directories for saving processed data
-    output_path = Path(PARAMETERS["OUTPUT_DIR"])
-    feature_path = output_path / "features"
+    output_path = Path(PARAMETERS["OUTPUT_DIR"]) / "six_channels"
     os.makedirs(output_path, exist_ok=True)
     os.makedirs(output_path / "processed_data", exist_ok=True)
-
+    feature_path = Path(PARAMETERS["OUTPUT_DIR"]) / "features"
     # Find all feature matrix files with the ".features.csv" extension
     feature_files = os.listdir(feature_path)
-
-    # filter(
-    #     lambda x: x.startswith("E"), glob.glob("**/*.features.csv", recursive=True)
-    # )
 
     # Retrieve metadata columns from the parameters file
     metadata_columns: List[str] = PARAMETERS["METADATA_COLUMNS"]
@@ -63,7 +60,8 @@ if __name__ == "__main__":
         missing: dict = {}
 
         # Iterate over each feature matrix file, clean, and standardize the data
-        for file in feature_files:
+        print("cleaning and standardizing data...")
+        for file in tqdm(feature_files):
             # Load, clean, and standardize the feature data
             clean_data, means, stds, dropped_segments, clipped, missing[file] = (
                 load_data_and_clean(
@@ -123,7 +121,6 @@ if __name__ == "__main__":
         model_save_path=output_path / "decomposition" / "models",
         parameters=PARAMETERS,
     )
-
 
     transformed_data.to_parquet(
         output_path / "processed_data" / "transformed_data.parquet"
