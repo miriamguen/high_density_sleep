@@ -43,6 +43,7 @@ if __name__ == "__main__":
     os.makedirs(OUTPUT_PATH, exist_ok=True)
     window_length = PARAMETERS["window_length"]
     step_size = PARAMETERS["step_size"]
+    batch_size = PARAMETERS["batch_size"]
     # Extract channel groups from parameters
     emg_channels = PARAMETERS["emg_channels"]
     eog_channels = PARAMETERS["eog_channels"]
@@ -64,7 +65,7 @@ if __name__ == "__main__":
     montage = mne.channels.make_dig_montage(ch_pos=pos_dict, coord_frame="head")
 
     # Process each file
-    for name in tqdm(txt_files):
+    for name in tqdm(txt_files[27:]):
 
         raw = mne.io.read_raw_edf(Path(name.replace(".txt", ".edf")))
         raw = raw.rename_channels(lambda x: x.replace("-Ref", "").upper())
@@ -83,12 +84,13 @@ if __name__ == "__main__":
         # Compute power spectral density (PSD) for each signal type
         # Extract features for each epoch
         features = {}
-        spectrums = []
+
 
         # Process the epochs in batches
-        for i in np.arange(0, len(events), 5000):
+        print("extracting spectral batches...")
+        for i in tqdm(np.arange(0, len(events), batch_size)):
             # Compute PSD for the current batch without averaging across epochs.
-            psd = epochs[i : i + 5000].compute_psd(
+            psd = epochs[i : i + batch_size].compute_psd(
                 method="welch",
                 n_fft=min(optimal_window, window_samples),
                 fmin=0.5,
@@ -98,19 +100,15 @@ if __name__ == "__main__":
                 average=False,
                 verbose=False,
             )
-            spectrums.append(psd)
 
-        spectrums = np.squeeze(np.concatenate(spectrums))
-        print("extracting spectral...")
-        for i in tqdm(range(len(spectrums))):
-            features[i] = extract_spectral_features(
-                spectrums[i, :, :],
-                freqs=psd.freqs,
-                ch_names=psd.ch_names,
-                band_dict=PARAMETERS["bands"],
-            )
+            for j in range(i, i + batch_size):
+                features[j] = extract_spectral_features(
+                    psd[j, :, :],
+                    freqs=psd.freqs,
+                    ch_names=psd.ch_names,
+                    band_dict=PARAMETERS["bands"],
+                )
 
-        del spectrums
 
         emg_spectrums = epochs.compute_psd(
             method="welch",
