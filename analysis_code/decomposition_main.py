@@ -68,6 +68,7 @@ if __name__ == "__main__":
                     feature_path / file,
                     metadata_columns=metadata_columns,
                     parameters=PARAMETERS,
+                    electrodes=use_electrodes,
                 )
             )
 
@@ -162,6 +163,7 @@ if __name__ == "__main__":
             channel_positions=channel_positions,
             title=f"{rename_pc(pc_name)}, ex: {pca_model.explained_variance_ratio_[i]:.2f}",
             save_path=output_path / "decomposition" / "pca",
+            electrodes=use_electrodes,
         )
 
     # Compute the feature-to-IC weights matrix by multiplying PCA and ICA weights
@@ -181,4 +183,5 @@ if __name__ == "__main__":
             channel_positions=channel_positions,
             title=f"{rename_pc(ic_name)}",
             save_path=output_path / "decomposition" / "ica",
+            electrodes=use_electrodes,
         )
