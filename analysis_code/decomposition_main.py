@@ -29,14 +29,14 @@ if __name__ == "__main__":
     the data for further analysis.
     """
     # define the electrodes to use, if None, all electrodes will be used
-    use_electrodes = ["F3", "F4", "C3", "C4", "O1", "O2"]
+    use_electrodes = None  # ["F3", "F4", "C3", "C4", "O1", "O2"]
 
     # Load analysis parameters from the YAML configuration file
     with open("analysis_code/parameters.yaml", "r") as file:
         PARAMETERS = yaml.safe_load(file)
 
     # Get the output directory and create necessary directories for saving processed data
-    output_path = Path(PARAMETERS["OUTPUT_DIR"]) / "six_channels"
+    output_path = Path(PARAMETERS["OUTPUT_DIR"])  # / "six_channels"
     os.makedirs(output_path, exist_ok=True)
     os.makedirs(output_path / "processed_data", exist_ok=True)
     feature_path = Path(PARAMETERS["OUTPUT_DIR"]) / "features"
@@ -156,7 +156,7 @@ if __name__ == "__main__":
     # Plot component weight maps for the top PCA components
     for i, pc_name in enumerate(pc_names_ic):
         plot_component_weight_map(
-            weights=pc_weights[[pc_name]],
+            weights=pc_weights.loc[[pc_name], :].T,
             component_name=pc_name,
             eeg_name_map=PARAMETERS["eeg_name_map"],
             non_eeg_name_map=PARAMETERS["non_eeg_name_map"],
@@ -168,15 +168,15 @@ if __name__ == "__main__":
 
     # Compute the feature-to-IC weights matrix by multiplying PCA and ICA weights
     feature_to_ic_weights = pd.DataFrame(
-        data=np.dot(a=pc_weights[pc_names_ic], b=ic_weights),
-        index=pc_weights.index,
-        columns=ic_weights.columns,
+        data=np.dot(ic_weights, pc_weights.loc[pc_names_ic, :]),
+        index=ic_weights.index,
+        columns=pc_weights.columns,
     )
 
     # Plot component weight maps for the ICA components
     for i, ic_name in enumerate(ic_names):
         plot_component_weight_map(
-            weights=feature_to_ic_weights[[ic_name]],
+            weights=feature_to_ic_weights.loc[[ic_name], :].T,
             component_name=ic_name,
             eeg_name_map=PARAMETERS["eeg_name_map"],
             non_eeg_name_map=PARAMETERS["non_eeg_name_map"],

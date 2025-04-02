@@ -401,72 +401,95 @@ def decompose_all_patients(
         data=pca_model.components_,
         index=pc_names,
         columns=pca_model.feature_names_in_,
-    ).T
-    pc_weights.to_csv(model_save_path / "pca_weights.csv")
+    )
+
+    # flip the component signs + wights for consistency with hypnogram for more intuitive visualization
+    pc_corr = []
     # Map sleep stages to y-tick labels for plotting
     sleep_stge_plot_values = parameters["sleep_stage_plot_values"]
     hypno_values = data[hypno_col].apply(lambda x: sleep_stge_plot_values[x]).values
 
-    # flip the component signs + wights for consistency with hypnogram for more intuitive visualization
-    pc_corr = []
     for pc in pc_names:
         direct = np.corrcoef(hypno_values, transformed_data[pc].values)[0, 1]
         if direct < 0:
             transformed_data[pc] = -1 * transformed_data[pc]
-            pc_weights[pc] = -1 * pc_weights[pc]
+            pc_weights.loc[pc, :] = -1 * pc_weights.loc[pc, :]
         pc_corr.append(direct)
+
+    assert np.allclose(
+        np.dot(pc_weights, centered_data.T).T,
+        transformed_data[pc_names].values,
+    )
+
+    pc_weights.to_csv(model_save_path / "pca_weights.csv")
 
     # Identify principal components explaining more than 1% of variance for ICA
     pc_names_ic = pc_names[: sum(explained_variance > parameters["min_ex"])]
     ic_names = [x.replace("p", "i").replace("-", "") for x in pc_names_ic]
-    total_ex_ic = sum(
-        explained_variance[: sum(explained_variance > parameters["min_ex"])]
-    )
 
     # Perform ICA using Picard algorithm on the significant PCs
-    K, W, S = picard(
-        transformed_data[pc_names_ic].values.T,
-        fun="tanh",
-        ortho=False,
-        lambda_min=0.001,
-        extended=True,
-        centering=False,
-        whiten=True,
-        random_state=1,
-        tol=1e-14,
-        fastica_it=None,
-        max_iter=10000,
-    )
+    try:
+        K, W, S = picard(
+            transformed_data[pc_names_ic].values.T,
+            fun="tanh",
+            ortho=False,
+            lambda_min=0.001,
+            extended=True,
+            centering=False,
+            whiten=True,
+            random_state=1,
+            tol=1e-14,
+            fastica_it=None,
+            max_iter=10000,
+        )
+    except:
+        K, W, S = picard(
+            transformed_data[pc_names_ic].values.T,
+            fun="tanh",
+            ortho=False,
+            lambda_min=0.001,
+            extended=True,
+            centering=False,
+            whiten=True,
+            random_state=1,
+            tol=0.5e-13,
+            fastica_it=None,
+            max_iter=10000,
+        )
 
     print("finished ICA")
     # W = np.dot(W, K)
     # Calculate explained variance for ICA components
     S = np.dot(W, transformed_data[pc_names_ic].values.T)
-    ic_var = np.var(S.T, axis=0)
+    ic_var = np.var(S, axis=1)
+    order = np.argsort(-ic_var)
+    ic_var = ic_var[order]
+
+    W = W[order, :]
+    S = S[order, :]
+
+    # assert that the ICA weights are correct after reordering
+    assert np.allclose(np.dot(W, transformed_data[pc_names_ic].values.T), S)
+
     features_var = np.var(features, axis=0)
     ic_ex = ic_var / features_var.sum()
-    ic_corr = [np.corrcoef(hypno_values, S[ic, :])[0, 1] for ic in range(len(ic_names))]
-
-    ind = np.argsort(-ic_ex)  # Sort ICs by overall explained variance
-    ic_corr = [ic_corr[i] for i in ind]
-    ic_ex = pd.DataFrame(
-        data=ic_ex[ind], index=ic_names, columns=["explained_variance"]
-    )
-    ic_ex["hypno_corr"] = ic_corr
-    transformed_data[ic_names] = S[ind, :].T
-
-    # Save ICA component weights
-    ic_weights = pd.DataFrame(data=W[ind, :], index=ic_names, columns=pc_names_ic).T
-    ic_weights.to_csv(model_save_path / "pca_to_ica_weights.csv")
+    ic_ex = pd.DataFrame(data=ic_ex, index=ic_names, columns=["explained_variance"])
 
     # Adjust ICA component signs for consistency with hypnogram
+    ic_corr = [np.corrcoef(hypno_values, S[ic, :])[0, 1] for ic in range(len(ic_names))]
     for i, ic in enumerate(ic_names):
         direct = ic_corr[i]
         if direct < 0:
-            transformed_data[ic] = -1 * transformed_data[ic]
-            ic_weights[ic] = -1 * ic_weights[ic]
-            # transformed_data.rename({ic: f"-{ic}"}, axis=1, inplace=True)
-            # ic_weights.rename({ic: f"-{ic}"}, axis=1, inplace=True)
+            S[i, :] = -1 * S[i, :]
+            W[i, :] = -1 * W[i, :]
+
+    ic_ex["hypno_corr"] = np.abs(ic_corr)
+    transformed_data[ic_names] = S.T
+    # assert that the ICA weights are correct after sign flip
+    assert np.allclose(np.dot(W, transformed_data[pc_names_ic].values.T), S)
+    # Save ICA component weights
+    ic_weights = pd.DataFrame(data=W, index=ic_names, columns=pc_names_ic)
+    ic_weights.to_csv(model_save_path / "pca_to_ica_weights.csv")
 
     # Add metadata back to the transformed data
     transformed_data[metadata_columns] = data[metadata_columns]
@@ -765,6 +788,7 @@ def plot_component_weight_map(
     title: str,
     save_path: Path,
     figure_columns: int = 8,
+    electrodes: List[str] = None,
 ) -> plt.Figure:
     """
     Plots a feature map to visualize the spatial distribution of weights across EEG electrodes and non-EEG modalities
@@ -798,6 +822,11 @@ def plot_component_weight_map(
     channel_positions = channel_positions.reset_index()
     channel_positions["electrode"] = channel_positions["electrode"].str.upper()
 
+    if electrodes:
+        channel_positions = channel_positions[
+            channel_positions["electrode"].isin(electrodes)
+        ]
+
     # Create a dictionary of positions for EEG electrodes
     pos_dict = {}
     for _, row in channel_positions.iterrows():
@@ -821,6 +850,11 @@ def plot_component_weight_map(
     # Add 'feature' and 'electrode' columns to weights DataFrame
     weights["feature"] = list(map(lambda x: "_".join(x.split("_")[1:]), weights.index))
     weights["electrode"] = list(map(lambda x: x.split("_")[0], weights.index))
+
+    if len(channel_positions) <= 19:
+        extrapolate = "head"
+    else:
+        extrapolate = "local"
 
     # Separate EEG and non-EEG weights
     non_eeg_weights = weights.loc[non_eeg_features, :]
@@ -852,7 +886,7 @@ def plot_component_weight_map(
             ch_type="eeg",
             vlim=[-max_val, max_val],
             show=False,
-            extrapolate="local",
+            extrapolate=extrapolate,
             sphere="auto",
             contours=4,
         )
