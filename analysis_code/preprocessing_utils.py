@@ -66,7 +66,11 @@ def read_hypno_and_plot(
 
 
 def preprocess_eeg(
-    raw: mne.io.Raw, epoch_length: float = 30.0, overlap: float = 0
+    name: str,
+    montage: mne.channels.DigMontage,
+    channel_type_mapping: dict,
+    epoch_length: float = 30.0,
+    overlap: float = 0,
 ) -> tuple:
     """
     Preprocess EEG data by applying band-pass filter, normalization, average referencing,
@@ -93,35 +97,53 @@ def preprocess_eeg(
         recording_time : float
             Total recording time in minutes.
     """
-    # Apply filtering and drift removal
-    raw = raw.load_data().filter(l_freq=0.5, h_freq=None, picks=["eeg", "ecg"])
 
-    raw = raw.filter(l_freq=0.3, h_freq=None, picks="eog")
+    # Define path for saving/loading preprocessed data
+    preprocessed_path = Path(name).parent / "preprocessed"
+    os.makedirs(preprocessed_path, exist_ok=True)
+    raw_file = preprocessed_path / f"{Path(name).stem}_raw.fif"
 
-    raw = raw.filter(l_freq=10, h_freq=None, picks="emg")
+    if raw_file.exists():
+        # Load preprocessed data if it exists
+        raw = mne.io.read_raw_fif(raw_file, preload=True)
+    else:
+        # Process raw data if it doesn't exist
+        raw = mne.io.read_raw_edf(Path(name.replace(".txt", ".edf")))
+        raw = raw.rename_channels(lambda x: x.replace("-Ref", "").upper())
+        raw = raw.set_channel_types(channel_type_mapping)
+        raw = raw.set_montage(montage)
 
-    # Set average reference
-    raw = raw.set_eeg_reference("average", projection=False)
+        # Apply filtering and drift removal
+        raw = raw.load_data().filter(l_freq=0.5, h_freq=None, picks=["eeg", "ecg"])
+        raw = raw.filter(l_freq=0.3, h_freq=None, picks="eog")
+        raw = raw.filter(l_freq=10, h_freq=None, picks="emg")
 
-    # Set bipolar references for non-EEG channels
-    raw = mne.set_bipolar_reference(
-        raw,
-        anode=["RLEG+", "LLEG+", "CHEMG1", "ECG1"],
-        cathode=["RLEG-", "LLEG-", "CHEMG2", "ECG2"],
-        ch_name=["RLEG", "LLEG", "CHEMG", "ECG"],
-        drop_refs=True,
-    )
-    raw = mne.set_bipolar_reference(
-        raw, anode=["EOG1"], cathode=["EOG2"], ch_name=["EOGR"], drop_refs=False
-    )
+        # Set average reference
+        raw = raw.set_eeg_reference("average", projection=False)
 
-    # Apply filtering by signal type (EEG, EOG, EMG, ECG)
-    raw = raw.filter(l_freq=None, h_freq=40, picks="eeg")
-    raw = raw.filter(l_freq=None, h_freq=15, picks="eog")
-    raw = raw.filter(l_freq=None, h_freq=50, picks="emg")
-    raw = raw.filter(l_freq=None, h_freq=20, picks="ecg")
+        # Set bipolar references for non-EEG channels
+        raw = mne.set_bipolar_reference(
+            raw,
+            anode=["RLEG+", "LLEG+", "CHEMG1", "ECG1"],
+            cathode=["RLEG-", "LLEG-", "CHEMG2", "ECG2"],
+            ch_name=["RLEG", "LLEG", "CHEMG", "ECG"],
+            drop_refs=True,
+        )
+        raw = mne.set_bipolar_reference(
+            raw, anode=["EOG1"], cathode=["EOG2"], ch_name=["EOGR"], drop_refs=False
+        )
+
+        # Apply filtering by signal type (EEG, EOG, EMG, ECG)
+        raw = raw.filter(l_freq=None, h_freq=40, picks="eeg")
+        raw = raw.filter(l_freq=None, h_freq=15, picks="eog")
+        raw = raw.filter(l_freq=None, h_freq=50, picks="emg")
+        raw = raw.filter(l_freq=None, h_freq=20, picks="ecg")
+
+        # Save the preprocessed raw data
+        raw.save(raw_file, overwrite=True)
     # Normalize the data
     raw_data = raw.get_data()
+    recording_start = np.datetime64(raw.info["meas_date"])
     recording_time = raw_data.shape[1] / (
         raw.info["sfreq"] * 60
     )  # Total recording time in minutes
@@ -137,7 +159,7 @@ def preprocess_eeg(
         raw, events, tmin=0, tmax=epoch_length, baseline=None, detrend=None
     )
 
-    return epochs, means, stds, recording_time, events
+    return epochs, means, stds, recording_time, recording_start, events
 
 
 def extract_spectral_features(
@@ -149,9 +171,10 @@ def extract_spectral_features(
 
     Parameters:
     -----------
-    epoch_spectrum : mne.time_frequency.EpochsTFR
-        Power spectral density (PSD) for a single epoch.
+    epoch_spectrum : np.array Power spectral density (PSD) for a single epoch.
     band_dict : a dictionary with the band names as key and values with a tuple
+    ch_names: the channel names
+    band_dict: the band dictionary
 
     Returns:
     --------
@@ -161,37 +184,61 @@ def extract_spectral_features(
 
     features = {}
 
-    for i, channel in enumerate(ch_names):  # epoch_spectrum.ch_names:
-        # psd = epoch_spectrum.get_data(picks=channel)
-        total_power = psd[i].sum()
-        if total_power == 0:
-            psd = np.ones_like(psd)
-            total_power = psd.sum()
+    total_power = psd.sum(axis=1)
+    normalized_psd = (psd.T / total_power).T
+    low_non_zero_value = np.nanmin(normalized_psd, axis=1)
+    log_psd = np.log(
+        normalized_psd.T * (np.exp(1) / low_non_zero_value)
+    ).T  # get a stable relative log psd
 
-        normalized_psd = psd[i] / total_power
-        low_non_zero_value = np.min(normalized_psd[np.nonzero(normalized_psd)])
-        log_psd = np.log(normalized_psd * (np.exp(1) / low_non_zero_value)) # get a stable relative log psd
+    features.update(
+        {
+            f"{ch}_root_total_power": value
+            for ch, value in zip(ch_names, np.sqrt(total_power))
+        }
+    )
+    features.update(
+        {
+            f"{ch}_spectral_entropy": value
+            for ch, value in zip(ch_names, entropy(normalized_psd, axis=1))
+        }
+    )
 
-        log_total_power = log_psd.sum()
-        normalized_log_psd = log_psd / log_total_power
+    log_total_power = log_psd.sum(axis=1)
+    normalized_log_psd = (log_psd.T / log_total_power).T
+    freqs_reshaped = np.log(freqs.reshape(-1, 1))
+    lin_reg_log = LinearRegression().fit(freqs_reshaped, normalized_log_psd.T)
 
-        features[f"{channel}_root_total_power"] = np.sqrt(total_power)
-        features[f"{channel}_spectral_entropy"] = entropy(normalized_psd)
+    features.update(
+        {
+            f"{ch}_spectral_slope": value
+            for ch, value in zip(ch_names, lin_reg_log.coef_[:, 0])
+        }
+    )
+    features.update(
+        {
+            f"{ch}_spectral_intercept": value
+            for ch, value in zip(ch_names, lin_reg_log.intercept_)
+        }
+    )
 
-        for band_name, (fmin, fmax) in band_dict.items():
-            idx_band = np.logical_and(freqs >= fmin, freqs <= fmax)
-            band_power = normalized_psd[idx_band].sum()
-            log_band_power = normalized_log_psd[idx_band].sum()
-            features[f"{channel}_{band_name}_power"] = band_power
-            features[f"{channel}_log_{band_name}_power"] = log_band_power
-
-        freqs_reshaped = np.log(freqs.reshape(-1, 1))
-        lin_reg_log = LinearRegression().fit(
-            freqs_reshaped, len(freqs_reshaped) * normalized_log_psd
+    for band_name, (fmin, fmax) in band_dict.items():
+        idx_band = np.logical_and(freqs >= fmin, freqs <= fmax)
+        features.update(
+            {
+                f"{ch}_{band_name}_power": value
+                for ch, value in zip(ch_names, normalized_psd[:, idx_band].sum(axis=1))
+            }
         )
 
-        features[f"{channel}_log_spectral_slope"] = lin_reg_log.coef_[0]
-        features[f"{channel}_log_spectral_intercept"] = lin_reg_log.intercept_
+        features.update(
+            {
+                f"{ch}_log_{band_name}_power": value
+                for ch, value in zip(
+                    ch_names, normalized_log_psd[:, idx_band].sum(axis=1)
+                )
+            }
+        )
 
     return features
 

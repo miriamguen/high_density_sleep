@@ -7,6 +7,8 @@ import numpy as np
 import mne
 import yaml
 from tqdm import tqdm
+from joblib import Parallel, delayed
+
 
 sys.path.append(os.path.abspath(os.getcwd()))
 from preprocessing_utils import (
@@ -17,6 +19,15 @@ from preprocessing_utils import (
     extract_ecg_features,
     read_hypno_and_plot,
 )
+
+
+def process_spectral_features(j, psd_batch, freqs, ch_names, band_dict):
+    return j, extract_spectral_features(
+        psd_batch[j - i, :, :],
+        freqs=freqs,
+        ch_names=ch_names,
+        band_dict=band_dict,
+    )
 
 
 if __name__ == "__main__":
@@ -40,6 +51,7 @@ if __name__ == "__main__":
         PARAMETERS = yaml.safe_load(file)
 
     OUTPUT_PATH = Path(PARAMETERS["OUTPUT_DIR"]) / "features"
+    n_jobs = PARAMETERS["n_jobs"]
     os.makedirs(OUTPUT_PATH, exist_ok=True)
     window_length = PARAMETERS["window_length"]
     step_size = PARAMETERS["step_size"]
@@ -65,26 +77,28 @@ if __name__ == "__main__":
     montage = mne.channels.make_dig_montage(ch_pos=pos_dict, coord_frame="head")
 
     # Process each file
-    for name in tqdm(txt_files[27:]):
-
-        raw = mne.io.read_raw_edf(Path(name.replace(".txt", ".edf")))
-        raw = raw.rename_channels(lambda x: x.replace("-Ref", "").upper())
-        raw = raw.set_channel_types(channel_type_mapping)
-        raw = raw.set_montage(montage)
-
-        recording_start = np.datetime64(raw.info["meas_date"])
+    for name in tqdm(txt_files):
 
         # Preprocess EEG
-        epochs, means, stds, recording_time, events = preprocess_eeg(
-            raw, window_length, overlap=window_length - step_size
+        # Define paths for saving/loading preprocessed data
+        preprocessed_path = Path(name).parent / "preprocessed"
+        os.makedirs(preprocessed_path, exist_ok=True)
+
+        # Run preprocessing and save results
+        epochs, means, stds, recording_time, recording_start, events = preprocess_eeg(
+            name,
+            montage,
+            channel_type_mapping,
+            window_length,
+            overlap=window_length - step_size,
         )
+
         window_samples = int(epochs[0].get_data().shape[-1])
-        optimal_window = int(raw.info["sfreq"] * 4)
-        # del raw
+        optimal_window = int(epochs.info["sfreq"] * 4)
+
         # Compute power spectral density (PSD) for each signal type
         # Extract features for each epoch
         features = {}
-
 
         # Process the epochs in batches
         print("extracting spectral batches...")
@@ -97,18 +111,27 @@ if __name__ == "__main__":
                 fmax=40,
                 remove_dc=False,
                 picks="eeg",
-                average=False,
+                average="mean",
                 verbose=False,
             )
 
-            for j in range(i, i + batch_size):
-                features[j] = extract_spectral_features(
-                    psd[j, :, :],
-                    freqs=psd.freqs,
-                    ch_names=psd.ch_names,
-                    band_dict=PARAMETERS["bands"],
-                )
+            freqs = psd.freqs
+            ch_names = psd.ch_names
+            psd = psd.get_data()
 
+            batch_size_psd = psd.shape[0]
+
+            # Process batch in parallel
+            results = Parallel(n_jobs=n_jobs)(
+                delayed(process_spectral_features)(
+                    j, psd, freqs, ch_names, PARAMETERS["bands"]
+                )
+                for j in range(i, i + batch_size_psd)
+            )
+
+            # Update features dictionary with results
+            for j, feature_dict in results:
+                features[j] = feature_dict
 
         emg_spectrums = epochs.compute_psd(
             method="welch",
@@ -120,8 +143,12 @@ if __name__ == "__main__":
         )
 
         print("extracting emg...")
-        for i in tqdm(range(len(emg_spectrums))):
-            features[i].update(extract_emg_features(emg_spectrums[i]))
+        results = Parallel(n_jobs=-1)(
+            delayed(extract_emg_features)(emg_spectrums[i])
+            for i in tqdm(range(len(emg_spectrums)))
+        )
+        for i, feature_dict in enumerate(results):
+            features[i].update(feature_dict)
 
         eog_spectrums = epochs.compute_psd(
             method="welch",
@@ -133,14 +160,23 @@ if __name__ == "__main__":
         )
 
         print("extracting eog...")
-        for i in tqdm(range(len(eog_spectrums))):
-            features[i].update(extract_eog_features(eog_spectrums[i]))
+        results = Parallel(n_jobs=n_jobs)(
+            delayed(extract_eog_features)(eog_spectrums[i])
+            for i in tqdm(range(len(eog_spectrums)))
+        )
+        for i, feature_dict in enumerate(results):
+            features[i].update(feature_dict)
 
         del eog_spectrums
 
         print("extracting ecg...")
-        for i in tqdm(range(len(epochs))):
-            features[i].update(extract_ecg_features(epochs[i].load_data().pick("ecg")))
+        print("extracting ecg...")
+        results = Parallel(n_jobs=n_jobs)(
+            delayed(extract_ecg_features)(epochs[i].load_data().pick("ecg"))
+            for i in tqdm(range(len(epochs)))
+        )
+        for i, feature_dict in enumerate(results):
+            features[i].update(feature_dict)
 
         hypno = read_hypno_and_plot(Path(name))
         # Process hypnogram data and feature matrix
