@@ -28,15 +28,20 @@ if __name__ == "__main__":
     This script loads all feature matrices, applies cleaning and standardization, and combines
     the data for further analysis.
     """
-    # define the electrodes to use, if None, all electrodes will be used
-    use_electrodes = None  # ["F3", "F4", "C3", "C4", "O1", "O2"]
 
     # Load analysis parameters from the YAML configuration file
     with open("analysis_code/parameters.yaml", "r") as file:
         PARAMETERS = yaml.safe_load(file)
 
     # Get the output directory and create necessary directories for saving processed data
-    output_path = Path(PARAMETERS["OUTPUT_DIR"])  # / "six_channels"
+    output_path = Path(PARAMETERS["OUTPUT_DIR"]) #/ "six_channels"
+
+    # define the electrodes to use, if None, all electrodes will be used
+    if output_path.stem == "six_channels":
+        use_electrodes = ["F3", "F4", "C3", "C4", "O1", "O2"]
+    else:
+        use_electrodes = None
+
     os.makedirs(output_path, exist_ok=True)
     os.makedirs(output_path / "processed_data", exist_ok=True)
     feature_path = Path(PARAMETERS["OUTPUT_DIR"]) / "features"

@@ -789,6 +789,7 @@ def plot_component_weight_map(
     save_path: Path,
     figure_columns: int = 8,
     electrodes: List[str] = None,
+    color_map: str = None,
 ) -> plt.Figure:
     """
     Plots a feature map to visualize the spatial distribution of weights across EEG electrodes and non-EEG modalities
@@ -818,11 +819,14 @@ def plot_component_weight_map(
     plt.Figure:
         The generated matplotlib figure.
     """
+
+    if color_map is None:
+        color_map = "RdBu_r"
     # Reset index of channel positions and ensure electrode names are in uppercase
     channel_positions = channel_positions.reset_index()
     channel_positions["electrode"] = channel_positions["electrode"].str.upper()
 
-    if electrodes:
+    if electrodes is not None:
         channel_positions = channel_positions[
             channel_positions["electrode"].isin(electrodes)
         ]
@@ -889,6 +893,7 @@ def plot_component_weight_map(
             extrapolate=extrapolate,
             sphere="auto",
             contours=4,
+            cmap=color_map,
         )
 
     # Plot non-EEG feature weights using bar plots
@@ -912,7 +917,7 @@ def plot_component_weight_map(
             hue=component_name,
             orient="v",
             ax=ax[x, y],
-            palette=sns.color_palette("RdBu_r", as_cmap=True),
+            palette=sns.color_palette(color_map, as_cmap=True),
             hue_norm=norm,
             edgecolor="black",
             linewidth=0.5,
@@ -939,7 +944,7 @@ def plot_component_weight_map(
     norm = mpl.colors.Normalize(vmin=-max_val, vmax=max_val)
     sns.despine(bottom=True, left=True, ax=colorbar_ax)
     colorbar = fig.colorbar(
-        mappable=mpl.cm.ScalarMappable(norm=norm, cmap="RdBu_r"),
+        mappable=mpl.cm.ScalarMappable(norm=norm, cmap=color_map),
         ax=colorbar_ax,
         use_gridspec=False,
         orientation="vertical",
