@@ -34,12 +34,10 @@ if __name__ == "__main__":
         PARAMETERS = yaml.safe_load(file)
 
     # Get the output directory and create necessary directories for saving processed data
-    output_path = Path(PARAMETERS["OUTPUT_DIR"]) #/ "six_channels"
-
-    # define the electrodes to use, if None, all electrodes will be used
-    if output_path.stem == "six_channels":
-        use_electrodes = ["F3", "F4", "C3", "C4", "O1", "O2"]
-    else:
+    output_path = Path(PARAMETERS["OUTPUT_DIR"])
+    data_path = Path(PARAMETERS["DATA_DIR"])
+    use_electrodes = PARAMETERS["select_channels"]
+    if use_electrodes=='None':
         use_electrodes = None
 
     os.makedirs(output_path, exist_ok=True)
@@ -151,7 +149,7 @@ if __name__ == "__main__":
 
     # Load the electrode channel positions for plotting
     channel_positions = pd.read_csv(
-        "Co-registered average positions.pos",
+        data_path / "Co-registered average positions.pos",
         header=None,
         delimiter="\t",
         names=["electrode", "y", "x", "z"],

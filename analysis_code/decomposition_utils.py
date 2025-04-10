@@ -65,7 +65,8 @@ def load_data_and_clean(
     feature_col = list(
         filter(lambda x: x not in metadata_columns, raw_data.columns.values)
     )
-    if electrodes:
+
+    if not (electrodes == None):
         feature_col = [
             col
             for col in feature_col
@@ -813,6 +814,8 @@ def plot_component_weight_map(
         Path where the figure will be saved.
     figure_columns : int, optional
         Number of columns to arrange the subplots (default is 8).
+    electrodes: the electrodes to include in the plot
+    color_map: the color map to use in the plot
 
     Returns:
     --------

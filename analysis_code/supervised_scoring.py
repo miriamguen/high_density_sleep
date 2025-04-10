@@ -28,14 +28,39 @@ from sklearn.metrics import (
 
 os.getcwd()
 
+
+def resample_yasa(hypno_df, subject_data):
+    last_time = hypno_df["time"].iloc[-1]
+    start_time = subject_data["time"].iloc[0]
+    last_index = hypno_df.index.values[-1]
+    hypno_df.loc[last_index + 1, ["time", "stage", "patient"]] = hypno_df[
+        ["time", "stage", "patient"]
+    ].iloc[-1]
+    hypno_df.loc[last_index, "time"] = subject_data["time"].iloc[-1]
+    hypno_df = (
+        hypno_df.set_index("time")
+        .resample(f"{window_step}s", origin=start_time)
+        .ffill()
+        .bfill()
+        .reset_index()
+    )
+    keep = hypno_df.time.apply(lambda x: x in subject_data.time.values)
+    hypno_df = hypno_df.loc[keep, :]
+    return hypno_df
+
+
 with open("analysis_code/parameters.yaml", "r") as f:
     PARAMETERS = yaml.safe_load(f)
 
-
-output_dir = Path(PARAMETERS["OUTPUT_DIR"]) #/ "six_channels"
+output_dir = Path(PARAMETERS["OUTPUT_DIR"])
+data_dir = Path(PARAMETERS["DATA_DIR"])
+window_step = PARAMETERS["step_size"]
 
 data = pd.read_parquet(output_dir / "decomposition" / "models" / "all_pc_data.parquet")
-subjects_metadata = pd.read_csv("Details information for healthy subjects.csv")
+data["time"] = pd.to_datetime(data["time"])
+subjects_metadata = pd.read_csv(
+    data_dir / "Details information for healthy subjects.csv"
+)
 
 txt_files = list(
     filter(lambda x: x.startswith("E"), glob.glob("**/*.txt", recursive=True))
@@ -45,12 +70,13 @@ save_dir = output_dir / "supervised_scoring"
 save_dir.mkdir(parents=True, exist_ok=True)
 y = "stage"
 stages = ["W", "R", "N1", "N2", "N3"]
-pca_ica = "ica"
+pca_ica = "pca"
 
 over_all_metrics = {}
 over_all_metrics_yasa = {}
 all_yasa_labels = []
 max_comp = 63
+min_comp = 1
 
 if os.path.exists(save_dir / f"{pca_ica}_metrics_df.csv"):
     metrics_df = pd.read_csv(save_dir / f"{pca_ica}_metrics_df.csv")
@@ -59,8 +85,8 @@ else:
     for subject in tqdm(data["patient"].unique()):
         subject_data = data[data["patient"] == subject]
         train_data = data[data["patient"] != subject]
-        eeg_file_path = Path(f"{subject}/{subject}/preprocessed/{subject}_raw.fif")
-        save_name = Path(f"{subject}/{subject}/yasa_hypno.csv")
+        eeg_file_path = data_dir / f"{subject}/{subject}/preprocessed/{subject}_raw.fif"
+        save_name = data_dir / f"{subject}/{subject}/yasa_hypno.csv"
         gender_male = (
             subjects_metadata.loc[subjects_metadata["Subjects ID"] == subject, "Sex"]
             == "M"
@@ -68,12 +94,31 @@ else:
         age = subjects_metadata.loc[
             subjects_metadata["Subjects ID"] == subject, "Age"
         ].values[0]
+
         if os.path.exists(save_name):
-            hypno_df = pd.read_csv(save_name)
+            # Add a last sample with similar timestamp as subject data by copying the last entry
+            if window_step == 30:
+                hypno_df = pd.read_csv(save_name, parse_dates=["time"])
+
+            elif os.path.exists(
+                save_name.parent / f"{save_name.stem}_resampled_{window_step}.csv"
+            ):
+                hypno_df = pd.read_csv(
+                    save_name.parent / f"{save_name.stem}_resampled_{window_step}.csv",
+                    parse_dates=["time"],
+                )
+
+            else:
+                hypno_df = pd.read_csv(save_name, parse_dates=["time"])
+                hypno_df = resample_yasa(hypno_df, subject_data)
+                hypno_df.to_csv(
+                    save_name.parent / f"{save_name.stem}_resampled_{window_step}.csv",
+                    index=False,
+                )
+
             all_yasa_labels.append(hypno_df)
         else:
             raw = mne.io.read_raw_fif(eeg_file_path, preload=True).load_data()
-
             raw = mne.set_bipolar_reference(
                 raw,
                 anode=["C4", "EOG1", "LLEG"],
@@ -102,11 +147,21 @@ else:
                     "stage": hypno_pred,
                     "patient": subject,
                     "time": np.datetime64(raw.info["meas_date"])
-                    + pd.TimedeltaIndex(np.arange(0, len(hypno_pred)) * 30, "s"),
+                    + pd.TimedeltaIndex(
+                        np.arange(0, len(hypno_pred)) * PARAMETERS["step_size"], "s"
+                    ),
                 }
             ).set_index("time")
 
-            hypno_df = hypno_df.loc[subject_data.time, :].reset_index()
+            hypno_df = hypno_df.loc[
+                subject_data.time, :
+            ].reset_index()  # use only the labeled epochs
+
+            if window_step != 30:
+                hypno_df = resample_yasa(hypno_df, subject_data)
+                save_name = (
+                    save_name.parent / f"{save_name.stem}_resampled_{window_step}.csv"
+                )
 
             hypno_df.to_csv(save_name, index=False)
             all_yasa_labels.append(hypno_df)
@@ -161,7 +216,7 @@ else:
             }
         )
 
-        for i in tqdm(range(1, max_comp)):
+        for i in tqdm(range(min_comp, max_comp)):
             train_on = data.columns[data.columns.str.startswith(pca_ica)][0:i]
 
             X_train = train_data[train_on]

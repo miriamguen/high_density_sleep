@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 import pickle
-
+from joblib import Parallel, delayed
 
 from hmm_utils import (
     create_state_profile,
@@ -35,18 +35,16 @@ from sleep_evaluation_utils import (
 with open("analysis_code/parameters.yaml", "r") as file:
     PARAMETERS = yaml.safe_load(file)
 
-#output_dir = Path(PARAMETERS["OUTPUT_DIR"])
-output_dir =Path(PARAMETERS["OUTPUT_DIR"]) #.parent / "output_short_overlap"
+# output_dir = Path(PARAMETERS["OUTPUT_DIR"])
+output_dir = Path(PARAMETERS["OUTPUT_DIR"])
 data = pd.read_parquet(output_dir / "processed_data" / "transformed_data.parquet")
 label_col = "stage"
 pca_ica = "ica"
 search_range = (2, 16)
 
-
 n_comp = data.columns.str.startswith("ica").sum()
 
 ic_names = [f"{pca_ica}{i}" for i in range(n_comp)]
-
 
 alias = f"{pca_ica}_{n_comp}"
 hmm_path = output_dir / "hmm"
@@ -81,11 +79,11 @@ else:
 # scan the state range from 2 to 25 using leave one out cross validation
 if len(search_range) > 0:
     results = []
-    for n_states in tqdm(search_range):
-        results.append(
-            fit_and_score_cv(data, ic_names, label_col, n_states, scale=False)
-        )
 
+    results = Parallel(n_jobs=PARAMETERS["n_jobs"])(
+        delayed(fit_and_score_cv)(data, ic_names, label_col, n_states, scale=False)
+        for n_states in tqdm(search_range)
+    )
     # # save the cross validation results
     results = pd.concat(results, axis=0)
     results = results.assign(data=f"results_{alias}")
@@ -141,6 +139,7 @@ results["time"] = data.time.values
 results["time_from_onset"] = data.time_from_onset.values
 results["patient"] = data.patient.values
 
+
 results.to_csv(common_path / "state_assignment_results.csv")
 model_metrics = pd.Series(
     {
@@ -156,15 +155,64 @@ best_cross_val_results.describe().to_csv(common_path / "model_metrics_cv_summary
 
 state_info = pd.DataFrame(state_to_stage, index=["mapped_states_all"]).T
 state_info["highest_rate"] = results.groupby("hidden_states")["time"].apply(
-    lambda x: np.histogram(x, bins=8)[0].argmax()
-)
-state_info["state_ids_all"] = [f"{k} ({v})" for k, v in state_to_stage.items()]
-state_info = state_info.reset_index().rename(columns={"index": "hidden_state"})
-state_info = state_info.sort_values(
-    ["highest_rate", "mapped_states_all"], ascending=[True, False]
+    lambda x: np.histogram(x, bins=2)[0].argmax()
 )
 
-# state_order = [4,5,2,7,0,1,6,3]
+state_names = [f"{k} ({v})" for k, v in state_to_stage.items()]
+transitions = pd.DataFrame(
+    data=model_all.transmat_, index=state_names, columns=state_names
+)
+
+state_info["state_ids_all"] = [f"{k} ({v})" for k, v in state_to_stage.items()]
+state_info["self_stability"] = [transitions.loc[i, i] for i in state_names]
+state_info = state_info.reset_index().rename(columns={"index": "hidden_state"})
+state_info = state_info.sort_values(
+    ["highest_rate", "mapped_states_all", "self_stability"],
+    ascending=[True, False, True],
+)
+
+sorted_states = state_info.state_ids_all.values
+
+
+transitions = transitions.loc[sorted_states, sorted_states]
+
+
+# Plot transition matrix heatmap
+plt.figure(figsize=(10, 8))
+# Create mask for low probability transitions
+mask = transitions < 0.001
+
+sns.heatmap(
+    transitions,
+    annot=True,
+    fmt=".3f",
+    cmap="Blues",
+    mask=mask,
+    cbar_kws={"label": "Transition Probability"},
+)
+
+plt.title("State Transition Probabilities")
+plt.xlabel("To State")
+plt.ylabel("From State")
+plt.tight_layout()
+plt.savefig(common_path / "transition_matrix_next.svg")
+plt.close()
+
+
+G_next = plot_transition_graph(
+    transitions.rename(
+        index=lambda x: int(x.split(" ")[0]), columns=lambda x: int(x.split(" ")[0])
+    ),
+    common_path / "transition_prob_next.svg",
+    manual=False,
+    state_map=state_to_stage,
+    th=0.001,
+    labels=False,
+)
+plt.close()
+
+transitions.to_csv(common_path / "transition_matrix_next.csv")
+
 # 2. Plot the sleep state distribution in each hidden state
 state_label_counts = plot_hidden_state_stage_distribution(
     model_all,
@@ -175,6 +223,7 @@ state_label_counts = plot_hidden_state_stage_distribution(
     alpha_value=0.7,
     title=None,  # f"Overall hidden state assignment, \nKappa={kappa:0.2f}, Accuracy={accuracy:0.2f}",
 )
+
 results["state_ids"] = [f"{k} ({state_to_stage[k]})" for k in results.hidden_states]
 state_counts = (
     pd.DataFrame(state_label_counts)
@@ -352,7 +401,7 @@ sleep_measures_shared_model = {}
 sleep_measures_personalized = {}
 
 model_metrics = {"cross_subject": {}, "shared_model": {}, "personalized": {}}
-
+print("starting personalized patient analysis")
 for subject in subjects:
 
     subject_path = hmm_path / alias / "subjects" / subject
@@ -514,8 +563,12 @@ for subject in subjects:
         # estimate the transition probabilities from the predicted sequence for the patient
         transition_probs = estimate_transition_probabilities(results["hidden_states"])
 
-        transition_probs = transition_probs.sort_values(by=list(transition_probs.index.values))
-        transition_probs = transition_probs.loc[transition_probs.index, transition_probs.index]
+        transition_probs = transition_probs.sort_values(
+            by=list(transition_probs.index.values)
+        )
+        transition_probs = transition_probs.loc[
+            transition_probs.index, transition_probs.index
+        ]
 
         plot_transition_graph(
             transition_probs,
@@ -554,7 +607,6 @@ sleep_measures_shared_model = pd.DataFrame(sleep_measures_shared_model).T.fillna
 sleep_measures_personalized = pd.DataFrame(sleep_measures_personalized).T.fillna(0)
 sleep_measures_cross_subject = pd.DataFrame(sleep_measures_cross_subject).T.fillna(0)
 
-
 os.makedirs(sleep_measure_path, exist_ok=True)
 sleep_measures_hypno.to_csv(sleep_measure_path / "measures_from_hypno.csv")
 
@@ -568,7 +620,6 @@ sleep_measures_personalized.to_csv(
 sleep_measures_cross_subject.to_csv(
     sleep_measure_path / "measures_from_cross_subject_model.csv"
 )
-
 
 compare_sleep_and_unsupervised_measures(
     sleep_measures_all=sleep_measures_hypno,
@@ -587,12 +638,6 @@ compare_sleep_and_unsupervised_measures(
     unsupervised_measures_all=sleep_measures_shared_model,
     save_path=sleep_measure_path / "baseline_to_shared_model",
 )
-
-# compare_sleep_and_unsupervised_measures(
-#     sleep_measures_all=sleep_measures_dont_retrain,
-#     unsupervised_measures_all=sleep_measures_retrain,
-#     save_path=sleep_measure_path / "shared_to_retrain_model",
-# )
 
 print("whats next")
 # individual analysis:

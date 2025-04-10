@@ -34,24 +34,23 @@ if __name__ == "__main__":
 
     # Load base path and files
     base_path = os.getcwd()
-    txt_files = list(
-        filter(lambda x: x.startswith("E"), glob.glob("**/*.txt", recursive=True))
-    )
-
-    # Load channel positions
-    channel_positions = pd.read_csv(
-        "Co-registered average positions.pos",
-        header=None,
-        delimiter="\t",
-        names=["electrode", "x", "y", "z"],
-    )
 
     # Load parameters from YAML file
     with open("analysis_code/parameters.yaml", "r") as file:
         PARAMETERS = yaml.safe_load(file)
 
+    DATA_PATH = PARAMETERS["DATA_DIR"]
+
+    txt_files = list(
+        filter(
+            lambda x: Path(x).stem.startswith("EPCTL"),
+            glob.glob(f"{DATA_PATH}/*/*/*.txt", recursive=True),
+        )
+    )
+
     OUTPUT_PATH = Path(PARAMETERS["OUTPUT_DIR"]) / "features"
     n_jobs = PARAMETERS["n_jobs"]
+    overright = PARAMETERS["overright"]
     os.makedirs(OUTPUT_PATH, exist_ok=True)
     window_length = PARAMETERS["window_length"]
     step_size = PARAMETERS["step_size"]
@@ -65,6 +64,13 @@ if __name__ == "__main__":
     channel_type_mapping = {ch: "emg" for ch in emg_channels}
     channel_type_mapping.update({ch: "ecg" for ch in ecg_channels})
     channel_type_mapping.update({ch: "eog" for ch in eog_channels})
+    # Load channel positions
+    channel_positions = pd.read_csv(
+        Path(DATA_PATH) / "Co-registered average positions.pos",
+        header=None,
+        delimiter="\t",
+        names=["electrode", "x", "y", "z"],
+    )
 
     for ch in channel_positions.electrode.values:
         channel_type_mapping[ch.upper()] = "eeg"
@@ -79,14 +85,20 @@ if __name__ == "__main__":
     # Process each file
     for name in tqdm(txt_files):
 
+        name = Path(name)
+        subject = name.stem
+        if os.path.exists(OUTPUT_PATH / f"{subject}.csv") and not (overright):
+            print(f"skipping {subject} due to existing feature table...")
+            continue
+
         # Preprocess EEG
         # Define paths for saving/loading preprocessed data
-        preprocessed_path = Path(name).parent / "preprocessed"
+        preprocessed_path = name.parent / "preprocessed"
         os.makedirs(preprocessed_path, exist_ok=True)
 
         # Run preprocessing and save results
         epochs, means, stds, recording_time, recording_start, events = preprocess_eeg(
-            name,
+            str(name),
             montage,
             channel_type_mapping,
             window_length,
@@ -98,11 +110,18 @@ if __name__ == "__main__":
 
         # Compute power spectral density (PSD) for each signal type
         # Extract features for each epoch
+
         features = {}
 
         # Process the epochs in batches
         print("extracting spectral batches...")
         for i in tqdm(np.arange(0, len(events), batch_size)):
+
+            if PARAMETERS["select_channels"] == "None":
+                picks = "eeg"
+            else:
+                picks = PARAMETERS["select_channels"]
+
             # Compute PSD for the current batch without averaging across epochs.
             psd = epochs[i : i + batch_size].compute_psd(
                 method="welch",
@@ -110,7 +129,7 @@ if __name__ == "__main__":
                 fmin=0.5,
                 fmax=40,
                 remove_dc=False,
-                picks="eeg",
+                picks=picks,
                 average="mean",
                 verbose=False,
             )
@@ -178,9 +197,9 @@ if __name__ == "__main__":
         for i, feature_dict in enumerate(results):
             features[i].update(feature_dict)
 
-        hypno = read_hypno_and_plot(Path(name))
+        hypno = read_hypno_and_plot(name)
         # Process hypnogram data and feature matrix
-        hypno["patient"] = name.split("\\")[-1].replace(".txt", "")
+        hypno["patient"] = name.stem
 
         hypno["time"] = hypno["time_from_onset"].apply(
             lambda x: recording_start + np.timedelta64(x, "s")
@@ -208,7 +227,7 @@ if __name__ == "__main__":
             lambda x: recording_start + np.timedelta64(x * step_size, "s")
         )
         feature_matrix = feature_matrix.set_index("time").drop(columns=["index"])
-        subject = name.split("\\")[0]
+
         # Save raw features
         pd.concat([hypno, feature_matrix], axis=1, join="inner").to_csv(
             OUTPUT_PATH / f"{subject}.csv"

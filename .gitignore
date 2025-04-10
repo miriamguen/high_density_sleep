@@ -1,8 +1,11 @@
 /.conda
 /.vscode
 /Artifact matrix
-/EPCTL*
 
 /analysis_code/__pycache__
 /paper_figures
 /output*
+/*_electrodes_*/
+/old/*
+*.log
+/data/*

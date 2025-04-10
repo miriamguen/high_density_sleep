@@ -120,14 +120,14 @@ def careful_predict(model, X, lengths, emission_gap=0.8):
         X, lengths=lengths, compute_posteriors=True
     )
     emission_states = np.argmax(posteriors, axis=1)
-    emission_diff = -np.min(posteriors.T - np.max(posteriors, axis=1), axis=0)
+    # emission_diff = -np.min(posteriors.T - np.max(posteriors, axis=1), axis=0)
     hidden_states = model.predict(X, lengths=lengths)
-    cond_1 = hidden_states != emission_states
+    # cond_1 = hidden_states != emission_states
 
-    if np.sum(cond_1) > 0:
-        cond_2 = emission_diff > emission_gap
-        override = np.logical_and(cond_1, cond_2)
-        hidden_states[override] = emission_states[override]
+    # if np.sum(cond_1) > 0:
+    #     cond_2 = emission_diff > emission_gap
+    #     override = np.logical_and(cond_1, cond_2)
+    #     hidden_states[override] = emission_states[override]
 
     return log_likelihood, posteriors, hidden_states
 
@@ -480,7 +480,9 @@ def plot_hidden_state_stage_distribution(
         len(unique_states), 1, figsize=(4.5, len(unique_states) * 4.5)
     )
 
-    state_order_ = list(filter( lambda x: int(x.split(" ")[0]) in unique_states, state_order))
+    state_order_ = list(
+        filter(lambda x: int(x.split(" ")[0]) in unique_states, state_order)
+    )
 
     state_label_counts = {}
     for i, state in enumerate(state_order_):
@@ -643,7 +645,12 @@ def create_circle_coordinates(values):
 
 
 def plot_transition_graph(
-    transition_probs_: pd.DataFrame, save_path: str, manual=True, state_map=None
+    transition_probs_: pd.DataFrame,
+    save_path: str,
+    manual=True,
+    state_map=None,
+    th=0.01,
+    labels=True,
 ) -> None:
     """
     Plots a directed graph for the transition probabilities with custom layout.
@@ -670,22 +677,6 @@ def plot_transition_graph(
     pos = create_circle_coordinates(states)
 
     if not (manual):
-        # n_hidden = len(state_map)
-        # if n_hidden == 9:
-        #     pos = {
-        #         0: (2.5, 8),
-        #         5: (5.5, 8),
-        #         3: (0, 5.5),
-        #         1: (8, 5.5),
-        #         4: (4, 4),
-        #         2: (0, 2.5),
-        #         6: (8, 2.5),
-        #         8: (2, 0),
-        #         7: (6, 0),
-        #     }
-        # else:
-        #     states = transition_probs.index.values
-        #     pos = create_circle_coordinates(states)
 
         hidden_states = list(pos.keys())
         renaming = lambda n: f"{n} ({state_map[n]})"
@@ -697,9 +688,9 @@ def plot_transition_graph(
         }
         transition_probs = transition_probs.rename(index=renaming, columns=renaming)
 
-    transition_probs = transition_probs.map(lambda x: 0 if x < 0.01 else np.round(x, 2))
+    transition_probs = transition_probs.map(lambda x: 0 if x < th else np.round(x, 2))
     # estimate in and out node degree
-    transition_node = transition_probs.map(lambda x: 1 if x >= 0.01 else 0)
+    transition_node = transition_probs.map(lambda x: 1 if x >= th else 0)
     out_degree = transition_node.sum(axis=1)
     in_degree = transition_node.sum(axis=0)
     # Create a directed graph
@@ -729,7 +720,7 @@ def plot_transition_graph(
     # Draw nodes
     # Draw nodes with colors from the stage_color_map
     node_colors = {node: stage_color_map[node] for node in pos.keys()}
-    node_sizes = 4000 * np.emath.logn(len(in_degree), in_degree.loc[pos.keys()]) + 1000
+    node_sizes = 1000 * np.emath.logn(len(in_degree), in_degree.loc[pos.keys()]) + 2000
     node_alpha = 1 - 0.9 * (out_degree / len(out_degree)).loc[pos.keys()]
 
     nx.draw_networkx_nodes(
@@ -751,17 +742,18 @@ def plot_transition_graph(
         edge[2]["weight"] * 10 for edge in edges
     ]  # Scale width for visibility
     # Draw labels for edges (non-self probabilities)
-    edge_labels = {(edge[0], edge[1]): f"{edge[2]['weight']:.2f}" for edge in edges}
-    edge_label_pos = nx.draw_networkx_edge_labels(
-        G,
-        pos,
-        edge_labels=edge_labels,
-        font_size=10,
-        label_pos=0.25,
-    )
-    # Adjust edge label colors to match arrow colors
-    for (n1, n2), label in edge_label_pos.items():
-        label.set_color(stage_color_map[n1])
+    if labels:
+        edge_labels = {(edge[0], edge[1]): f"{edge[2]['weight']:.2f}" for edge in edges}
+        edge_label_pos = nx.draw_networkx_edge_labels(
+            G,
+            pos,
+            edge_labels=edge_labels,
+            font_size=10,
+            label_pos=0.3,
+        )
+        # Adjust edge label colors to match arrow colors
+        for (n1, n2), label in edge_label_pos.items():
+            label.set_color(stage_color_map[n1])
 
     nx.draw_networkx_edges(
         G,
@@ -786,7 +778,7 @@ def plot_transition_graph(
         x, y = pos[node]
         plt.text(
             x,
-            y - 0.09,
+            y - 0.05,
             f"{prob:.2f}",
             ha="center",
             va="center",

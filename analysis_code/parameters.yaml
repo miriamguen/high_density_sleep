@@ -1,14 +1,19 @@
-DATA_DIR: C:/Users/USER/high_density_sleep
+DATA_DIR: C:/Users/USER/high_density_sleep/data
 METADATA_FILE_NAME: "Details information for healthy subjects.csv"
 DROPBOX_DIR: 'D:/Ben Gurion University of Negev Dropbox/Miriam Guen/Miriam Guendelman/Projects/high_density_sleep'
 
 SLEEP_LABELS_SUFFIX': ".txt"
-OUTPUT_DIR: 'output_test'
+OUTPUT_DIR: 'all_electrodes_4' # add "select_channels" to run compact version
 MODEL_DIR: 'models'
 FIGURE_DIR: 'figures'
-window_length: 30 # in seconds
-step_size: 30 # in seconds
-batch_size: 100 # in epochs adjust to computer memory capacity
+window_length: 4 # in seconds
+step_size: 4 # in seconds
+batch_size: 2000 # in epochs adjust to computer memory capacity
+n_jobs: 8
+overright: False
+
+select_channels: None # ["F3", "F4", "C3", "C4", "O1", "O2"] # set None to select all
+
 
 emg_channels:
   - "CHEMG1"
@@ -145,8 +150,8 @@ eeg_name_map:
   log_high_sigma_power: "High sigma (log)"
   log_beta_power: "Beta (log)"
   log_gamma_power: "Gamma (log)"
-  log_spectral_intercept: "Intercept"
-  log_spectral_slope: "Slope"
+  spectral_intercept: "Intercept"
+  spectral_slope: "Slope"
   spectral_entropy: "Entropy"
   root_total_power: "Power"
 
