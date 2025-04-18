@@ -239,11 +239,11 @@ for ic in ic_names + pc_names:
 data = pd.read_parquet(output_dir / "processed_data" / "transformed_data.parquet")
 for i, ic in enumerate(ic_names + pc_names):
     fig, ax = plt.subplots(figsize=(5, 5))
-    ax.axvline(x=0, color="gray", linestyle="--", label="0", alpha=0.75, linewidth=1)
+    ax.axhline(y=0, color="gray", linestyle="--", label="0", alpha=0.75, linewidth=1)
     sns.violinplot(
         data=data,
-        x=ic,
-        y="stage",
+        y=ic,
+        x="stage",
         hue="stage",
         palette=PARAMETERS["stage_color_map"],
         density_norm="count",
@@ -254,10 +254,12 @@ for i, ic in enumerate(ic_names + pc_names):
     )
 
     max_val = max(-data[ic].min(), data[ic].max()) * 1.1
-    ax.set_xlim(-max_val, max_val)
+    ax.set_ylim(-max_val, max_val)
     if ic.startswith("p"):
-        i -= 6
-    ax.set_xlabel(f"{ic.split('a')[0].upper()} {i+1}")
-    ax.set_ylabel("")
+        i -= int(len(ic_names + pc_names) / 2)
+    name = f"{ic.split('a')[0].upper()} {i+1}"
+    ax.set_ylabel(name)
+    ax.set_xlabel("Sleep Stage")
+    ax.set_title(f"{name} Stage Distribution")
     fig.savefig(statistical_model_path / f"empirical_{ic}_stage_distribution.svg")
     plt.close()

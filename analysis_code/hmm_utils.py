@@ -322,7 +322,7 @@ def plot_evaluation_metrics(
     results_df: pd.DataFrame,
     best_states: List[int],
     save_path: str,
-    metrics: list = ["bic", "aic", "kappa", "accuracy"],
+    metrics: list = ["bic", "aic", "adjusted_log_likelihood"],
 ) -> None:
     """Plots evaluation metrics for different numbers of hidden states.
 
@@ -492,11 +492,11 @@ def plot_hidden_state_stage_distribution(
         state_data = results[results["hidden_states"] == int(state.split(" ")[0])][
             "labels"
         ]
+
         state_name = results[results["hidden_states"] == int(state.split(" ")[0])][
             "hidden_states_mapped"
         ].unique()
 
-        state_name
         if len(state_name) != 1:
             continue
 
@@ -647,7 +647,7 @@ def create_circle_coordinates(values):
 def plot_transition_graph(
     transition_probs_: pd.DataFrame,
     save_path: str,
-    manual=True,
+    state_color_map=None,
     state_map=None,
     th=0.01,
     labels=True,
@@ -676,19 +676,21 @@ def plot_transition_graph(
     states = transition_probs.index.values
     pos = create_circle_coordinates(states)
 
-    if not (manual):
+    if state_color_map is None:
+        if state_map is None:
+            state_color_map = stage_color_map
+        else:
+            if type(states[0]) == str:
+                state_color_map = {
+                    f"{k} ({v})": stage_color_map[v] for k, v in state_map.items()
+                }
+            else:
+                state_color_map = {
+                    k: stage_color_map[v] for k, v in state_map.items()
+                }
 
-        hidden_states = list(pos.keys())
-        renaming = lambda n: f"{n} ({state_map[n]})"
-        pos = {renaming(k): v for k, v in pos.items()}
-        states = [renaming(n) for n in hidden_states]
-        stage_color_map = {
-            f"{n} ({state_map[n]})": stage_color_map[state_map[n]]
-            for n in hidden_states
-        }
-        transition_probs = transition_probs.rename(index=renaming, columns=renaming)
+            # transition_probs = transition_probs.rename(index=renaming, columns=renaming)
 
-    transition_probs = transition_probs.map(lambda x: 0 if x < th else np.round(x, 2))
     # estimate in and out node degree
     transition_node = transition_probs.map(lambda x: 1 if x >= th else 0)
     out_degree = transition_node.sum(axis=1)
@@ -709,17 +711,23 @@ def plot_transition_graph(
                     self_loops[state_from] = prob
                 else:
                     # Add only non-self-transition edges
+                    # if type(state_from) is str:
+                    #     s = state_from
+                    # else:
+                    #     s = list(
+                    #         filter(
+                    #             lambda x: x.split(" ")[0] == str(state_from),
+                    #             list(state_color_map.keys()),
+                    #         )
+                    #     )[0]
                     G.add_edge(
-                        state_from,
-                        state_to,
-                        weight=prob,
-                        color=stage_color_map[state_from],
+                        state_from, state_to, weight=prob, color=state_color_map[state_from]
                     )
 
     plt.figure(figsize=(8, 8))
     # Draw nodes
-    # Draw nodes with colors from the stage_color_map
-    node_colors = {node: stage_color_map[node] for node in pos.keys()}
+    # Draw nodes with colors from the state_color_map
+    node_colors = {node: state_color_map[node] for node in pos.keys()}
     node_sizes = 1000 * np.emath.logn(len(in_degree), in_degree.loc[pos.keys()]) + 2000
     node_alpha = 1 - 0.9 * (out_degree / len(out_degree)).loc[pos.keys()]
 
@@ -753,7 +761,7 @@ def plot_transition_graph(
         )
         # Adjust edge label colors to match arrow colors
         for (n1, n2), label in edge_label_pos.items():
-            label.set_color(stage_color_map[n1])
+            label.set_color(state_color_map[n1])
 
     nx.draw_networkx_edges(
         G,
@@ -899,7 +907,9 @@ def plot_parameter_means_and_ci(
     plt.close()
 
 
-def plot_state_time_histogram(results, bins, stage_color_map, state_order, save_path):
+def plot_state_time_histogram(
+    results, bins, stage_color_map, state_order, save_path, state_color_map=None
+):
     """
     Plots the time distribution for each hidden state as a histogram with a KDE overlay.
 
@@ -929,8 +939,14 @@ def plot_state_time_histogram(results, bins, stage_color_map, state_order, save_
         state_data = results[results["hidden_states"] == state]
         if len(state_data) == 0:
             continue
+
         mapped_state = state_data["hidden_states_mapped"].values[0]
-        color = stage_color_map[mapped_state]
+        if state_color_map is not None:
+            # Use the provided color map for hidden states
+            color = state_color_map[f"{state} ({mapped_state})"]
+        else:
+            color = stage_color_map[mapped_state]
+
         # Plot histogram and KDE
         sns.histplot(
             state_data["time"],
@@ -952,7 +968,9 @@ def plot_state_time_histogram(results, bins, stage_color_map, state_order, save_
     plt.close()
 
 
-def plot_stage_time_histogram(results, bins, stage_color_map, state_order, save_path):
+def plot_stage_time_histogram(
+    results, bins, stage_color_map, state_order, save_path, state_color_map=None
+):
     """
     Plots the time distribution for each hidden state as a histogram with a KDE overlay.
 

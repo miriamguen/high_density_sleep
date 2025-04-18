@@ -675,15 +675,31 @@ def plot_interactive_low_dimension_map(
         )
 
     # Update layout for the 3D plot
+
+    tickfont = dict(size=15)  # Font size for tick labels
+    font = dict(size=20)  # Font size for tick labels
+    # Update layout for the 3D plot
     fig.update_layout(
         scene=dict(
-            xaxis_title=f"{x} (PDU)",
-            yaxis_title=f"{y} (PDU)",
-            zaxis_title=f"{z} (PDU)",
+            xaxis=dict(
+                title=dict(text=f"  {x}  ", font=font),  # Axis label font size
+                tickfont=tickfont,  # Tick label font size
+                nticks=5,
+            ),
+            yaxis=dict(
+                title=dict(text=f"  {y}  ", font=font),  # Axis label font size
+                tickfont=tickfont,  # Tick label font size
+                nticks=5,
+            ),
+            zaxis=dict(
+                title=dict(text=f"  {z}  ", font=font),  # Axis label font size
+                tickfont=tickfont,  # Tick label font size
+                nticks=5,
+            ),
             aspectmode="cube",
-        ),
-        title="3D Scatter Plot of First 3 Principal Components by Sleep Stage",
-        legend_title="Sleep Stage",
+            # title="3D Scatter Plot of First 3 Principal Components by Sleep Stage",
+            # legend_title="Sleep Stage",
+        )
     )
 
     # Save the interactive 3D plot as an HTML file
@@ -791,6 +807,7 @@ def plot_component_weight_map(
     figure_columns: int = 8,
     electrodes: List[str] = None,
     color_map: str = None,
+    max_val: float = None,
 ) -> plt.Figure:
     """
     Plots a feature map to visualize the spatial distribution of weights across EEG electrodes and non-EEG modalities
@@ -875,16 +892,18 @@ def plot_component_weight_map(
 
     colorbar_ax = ax[rows - 1, figure_columns - 1]
     ax[rows - 1, figure_columns - 1].set_xticks([])
-
-    max_val = np.max(np.abs(weights[component_name]))  # Define symmetric color range
-    tick_val = np.round(max_val * 0.6, decimals=3)
+    if max_val is None:
+        max_val = np.max(
+            np.abs(weights[component_name])
+        )  # Define symmetric color range
+    tick_val = np.round(max_val * 0.9, decimals=3)
     # Plot EEG topomaps
     for i, feature in enumerate(eeg_name_map.keys()):
         x, y = np.divmod(i, figure_columns)
         feature_weights = eeg_weights[eeg_weights.feature == feature]
         feature_weights.set_index("electrode", inplace=True)
 
-        ax[x, y].set_title(eeg_name_map[feature], fontsize=16)
+        ax[x, y].set_title(eeg_name_map[feature], fontsize=22)
 
         mne.viz.plot_topomap(
             data=feature_weights[component_name].values,
@@ -927,25 +946,25 @@ def plot_component_weight_map(
             legend=False,
         )
         sns.despine(bottom=True, left=True, ax=ax[x, y])
-        ax[x, y].set_title(f"{modality_group}", fontsize=16)
-        ax[x, y].tick_params(axis="x", rotation=0)
+        ax[x, y].set_title(f"{modality_group}", fontsize=22)
+        ax[x, y].tick_params(axis="x", rotation=30, labelsize=20)
+        ax[x, y].tick_params(axis="y", labelsize=0)
         ax[x, y].set_xlabel("")
         ax[x, y].set_ylabel("")
         ax[x, y].axhline(
             y=0, color="gray", linestyle="--", label="0", alpha=0.5, linewidth=0.5
         )
-        if i == 0:
-            ax[x, y].set_yticks([-tick_val, tick_val])
-        else:
-            ax[x, y].set_yticks([])
-
+        # if i == 0:
+        #     ax[x, y].set_yticks([-tick_val, tick_val])
+        # else:
+        ax[x, y].set_yticks([-max_val, max_val])
         ax[x, y].set_ylim([-max_val, max_val])
-        ax[x, y].tick_params(axis="y", rotation=90)
-        ax[x, y].yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.3f}"))
+        ax[x, y].tick_params(axis="y", size=0)
+        # ax[x, y].yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
 
     # Create and add colorbar
     norm = mpl.colors.Normalize(vmin=-max_val, vmax=max_val)
-    sns.despine(bottom=True, left=True, ax=colorbar_ax)
+    sns.despine(bottom=True, left=True, right=True, ax=colorbar_ax)
     colorbar = fig.colorbar(
         mappable=mpl.cm.ScalarMappable(norm=norm, cmap=color_map),
         ax=colorbar_ax,
@@ -955,10 +974,13 @@ def plot_component_weight_map(
         fraction=0.5,
         pad=0.5,
     )
-    colorbar.ax.set_yticks([-tick_val, 0, tick_val])
-    colorbar.ax.tick_params(labelsize=14, labelrotation=0)
-    colorbar.ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.3f}"))
-    colorbar.ax.set_xlabel("PDU", fontsize=16)
+    colorbar.ax.set_yticks([-max_val, 0, max_val])
+    colorbar.ax.tick_params(
+        labelsize=18,
+        labelrotation=0,
+    )
+    colorbar.ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.2f}"))
+    colorbar.ax.set_xlabel("PDU", fontsize=22)
     sns.despine(bottom=True, left=True, ax=colorbar.ax)
 
     # Save the figure

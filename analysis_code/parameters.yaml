@@ -1,19 +1,13 @@
 DATA_DIR: C:/Users/USER/high_density_sleep/data
 METADATA_FILE_NAME: "Details information for healthy subjects.csv"
-DROPBOX_DIR: 'D:/Ben Gurion University of Negev Dropbox/Miriam Guen/Miriam Guendelman/Projects/high_density_sleep'
+OUTPUT_DIR: 'all_electrodes_30' # add "select_channels" to run compact version
 
-SLEEP_LABELS_SUFFIX': ".txt"
-OUTPUT_DIR: 'all_electrodes_4' # add "select_channels" to run compact version
-MODEL_DIR: 'models'
-FIGURE_DIR: 'figures'
-window_length: 4 # in seconds
-step_size: 4 # in seconds
+select_channels: None # ["F3", "F4", "C3", "C4", "O1", "O2"] # set None to select all None #
+window_length: 30 # in seconds
+step_size: 30   # in seconds
 batch_size: 2000 # in epochs adjust to computer memory capacity
 n_jobs: 8
 overright: False
-
-select_channels: None # ["F3", "F4", "C3", "C4", "O1", "O2"] # set None to select all
-
 
 emg_channels:
   - "CHEMG1"
@@ -73,38 +67,44 @@ stage_color_map:
   "N2": "royalblue"
   "N3": "midnightblue"
 
+state_color_map_pca_4_all:
+  "0 (W)": "darkorange"
+  "3 (W)": "salmon"
+  "6 (R)": "red"
+  "5 (N1)": "magenta"
+  "2 (N2)": "royalblue"
+  "4 (N3)": "midnightblue"
+  "1 (N3)": "navy"
 
-state_color_map_pca:
-  "state 0-W": "darkorange"
-  "state 3-W": "salmon"
-  "state 6-R": "red"
-  "state 5-N1": "magenta"
-  "state 2-N2": "royalblue"
-  "state 4-N3": "midnightblue"
-  "state 1-N3": "navy"
 
+state_color_map_ica_4_all:
+  "10 (W)": "orange"
+  "5 (W)": "lightsalmon"
+  "6 (W)": "lightcoral"
+  "9 (N1)": "magenta"
+  "7 (R)": "darkred"
+  "1 (R)":  "red"
+  "0 (N2)": "lightsteelblue"
+  "8 (N2)": "royalblue"
+  "4 (N2)": "mediumblue"
+  "3 (N2)": "darkslateblue"
+  "2 (N3)": "midnightblue"
 
-state_color_map_ica:
-  "state 0-N2": "blueviolet"
-  "state 1-R":  "red"
-  "state 2-N3": "midnightblue"
-  "state 3-N2": "royalblue"
-  "state 4-N2": "mediumblue"
-  "state 5-W": "darkorange"
-  "state 6-W": "orange"
-  "state 7-R": "darkred"
-  "state 8-N2": "cornflowerblue"
-  "state 9-N1": "magenta"
-  "state 10-W": "salmon"
+state_color_map_ica_4_six:
+  "6 (W)": "orange"
+  "5 (W)": "lightsalmon"
+  "2 (W)": "lightcoral"
+  "11 (N1)": "magenta"
+  "10 (R)": "darkred"
+  "4 (R)":  "red"
+  "0 (N2)": "mediumpurple"
+  "1 (N2)": "violet"
+  "7 (N2)": "lightsteelblue"
+  "9 (N2)": "royalblue"
+  "8 (N2)": "mediumblue"
+  "12 (N3)": "darkslateblue"
+  "3 (N3)": "midnightblue"
 
-# state_color_map_ica:
-#   "state 5-W": "darkorange"
-#   "state 3-W": "salmon"
-#   "state 4-R": "red"
-#   "state 2-N1": "magenta"
-#   "state 6-N2": "royalblue"
-#   "state 1-N2": "midnightblue"
-#   "state 0-N3": "navy"
 
 sleep_stage_plot_values:
   "W": 5
@@ -142,14 +142,14 @@ eeg_name_map:
   high_sigma_power: "High sigma"
   beta_power: "Beta"
   gamma_power: "Gamma"
-  log_low_delta_power: "Slow waves (log)"
-  log_high_delta_power: "Delta (log)"
-  log_theta_power: "Theta (log)"
-  log_alpha_power: "Alpha (log)"
-  log_low_sigma_power: "Low sigma (log)"
-  log_high_sigma_power: "High sigma (log)"
-  log_beta_power: "Beta (log)"
-  log_gamma_power: "Gamma (log)"
+  log_low_delta_power: "Slow waves \n(log)"
+  log_high_delta_power: "Delta \n(log)"
+  log_theta_power: "Theta \n(log)"
+  log_alpha_power: "Alpha \n(log)"
+  log_low_sigma_power: "Low sigma \n(log)"
+  log_high_sigma_power: "High sigma \n(log)"
+  log_beta_power: "Beta \n(log)"
+  log_gamma_power: "Gamma \n(log)"
   spectral_intercept: "Intercept"
   spectral_slope: "Slope"
   spectral_entropy: "Entropy"
@@ -168,4 +168,3 @@ non_eeg_name_map:
     ECG_heart_rate: "HR"
     ECG_SDNN: "SDNN"
     ECG_rmssd: "HRV"
-

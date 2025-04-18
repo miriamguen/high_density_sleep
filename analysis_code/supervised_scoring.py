@@ -61,6 +61,16 @@ data["time"] = pd.to_datetime(data["time"])
 subjects_metadata = pd.read_csv(
     data_dir / "Details information for healthy subjects.csv"
 )
+sample_per_subject = data.groupby("patient").count()["num"]
+sample_per_subject.to_csv(output_dir / "samples_per_subject.csv")
+portion_per_stage_subject = (
+    data.groupby(["patient", "stage"]).count()["num"] / sample_per_subject
+)
+portion_per_stage_subject = portion_per_stage_subject.unstack()[
+    ["W", "R", "N1", "N2", "N3"]
+]
+portion_per_stage_subject.to_csv(output_dir / "samples_per_stage_subject.csv")
+
 
 txt_files = list(
     filter(lambda x: x.startswith("E"), glob.glob("**/*.txt", recursive=True))

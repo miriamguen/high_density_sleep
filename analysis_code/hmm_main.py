@@ -40,17 +40,22 @@ output_dir = Path(PARAMETERS["OUTPUT_DIR"])
 data = pd.read_parquet(output_dir / "processed_data" / "transformed_data.parquet")
 label_col = "stage"
 pca_ica = "ica"
+electrodes = PARAMETERS["select_channels"]
+six_all = "all" if electrodes == "None" else "six"
+window = PARAMETERS["window_length"]
+stage_color_map = PARAMETERS["stage_color_map"]
+color_map_name = f"state_color_map_{pca_ica}_{window}_{six_all}"
+if color_map_name in PARAMETERS:
+    state_color_map = PARAMETERS[color_map_name]
+else:
+    state_color_map = None
+
 search_range = (2, 16)
-
 n_comp = data.columns.str.startswith("ica").sum()
-
 ic_names = [f"{pca_ica}{i}" for i in range(n_comp)]
-
 alias = f"{pca_ica}_{n_comp}"
 hmm_path = output_dir / "hmm"
 os.makedirs(hmm_path / alias, exist_ok=True)
-
-stage_color_map = PARAMETERS["stage_color_map"]
 
 
 def add_time(df):
@@ -155,7 +160,7 @@ best_cross_val_results.describe().to_csv(common_path / "model_metrics_cv_summary
 
 state_info = pd.DataFrame(state_to_stage, index=["mapped_states_all"]).T
 state_info["highest_rate"] = results.groupby("hidden_states")["time"].apply(
-    lambda x: np.histogram(x, bins=2)[0].argmax()
+    lambda x: np.histogram(x, bins=3)[0].argmax()
 )
 
 state_names = [f"{k} ({v})" for k, v in state_to_stage.items()]
@@ -167,15 +172,12 @@ state_info["state_ids_all"] = [f"{k} ({v})" for k, v in state_to_stage.items()]
 state_info["self_stability"] = [transitions.loc[i, i] for i in state_names]
 state_info = state_info.reset_index().rename(columns={"index": "hidden_state"})
 state_info = state_info.sort_values(
-    ["highest_rate", "mapped_states_all", "self_stability"],
+    ["mapped_states_all", "highest_rate", "self_stability"],
     ascending=[True, False, True],
 )
 
 sorted_states = state_info.state_ids_all.values
-
-
 transitions = transitions.loc[sorted_states, sorted_states]
-
 
 # Plot transition matrix heatmap
 plt.figure(figsize=(10, 8))
@@ -186,7 +188,7 @@ sns.heatmap(
     transitions,
     annot=True,
     fmt=".3f",
-    cmap="Blues",
+    cmap="PuRd",
     mask=mask,
     cbar_kws={"label": "Transition Probability"},
 )
@@ -200,11 +202,9 @@ plt.close()
 
 
 G_next = plot_transition_graph(
-    transitions.rename(
-        index=lambda x: int(x.split(" ")[0]), columns=lambda x: int(x.split(" ")[0])
-    ),
-    common_path / "transition_prob_next.svg",
-    manual=False,
+    transitions,  # .rename(index=lambda x: int(x.split(" ")[0]), columns=lambda x: int(x.split(" ")[0]))
+    save_path=common_path / "transition_prob_next.svg",
+    state_color_map=state_color_map,
     state_map=state_to_stage,
     th=0.001,
     labels=False,
@@ -291,6 +291,7 @@ plot_state_time_histogram(
     stage_color_map=stage_color_map,
     state_order=state_order_num,
     save_path=common_path / "state_time_distribution.svg",
+    state_color_map=state_color_map,
 )
 plt.close()
 plot_stage_time_histogram(
@@ -303,19 +304,10 @@ plot_stage_time_histogram(
 plt.close()
 
 # 4. Plot the cross patient state transition probability matrix
-transition_probs = pd.DataFrame(
-    data=model_all.transmat_,
-    columns=range(model_all.n_components),
-    index=range(model_all.n_components),
-)
-
-
-transition_probs = transition_probs.loc[state_order_num, state_order_num]
-# state_order_network = [3, 4, 7, 5, 0, 2, 6, 1]
 G = plot_transition_graph(
-    transition_probs,
+    transitions,
     common_path / "transition_prob.svg",
-    manual=False,
+    state_color_map=state_color_map,
     state_map=state_to_stage,
 )
 
@@ -323,11 +315,6 @@ transition_probs_mapped = estimate_transition_probabilities(
     results["hidden_states_mapped"]
 )
 
-plot_transition_graph(
-    transition_probs_mapped,
-    common_path / "transition_prob_mapped.svg",
-    manual=True,
-)
 
 # %% use the graph to identify common transition paths across patients
 # from collections import Counter
@@ -395,7 +382,6 @@ plot_transition_graph(
 subjects = data.patient.unique()
 
 sleep_measures_hypno = {}
-
 sleep_measures_cross_subject = {}
 sleep_measures_shared_model = {}
 sleep_measures_personalized = {}
@@ -420,7 +406,7 @@ for subject in subjects:
     #   retrain - the overall model with updated transition probabilities
     #   shared_model - the shared model without changes
     #   cross_patient with a model trained on all other patients
-    for retrain in ["cross_subject", "shared_model", "personalized"]:
+    for retrain in ["shared_model", "cross_subject", "personalized"]:
 
         if retrain == "personalized":
             subject_model, subject_state_to_stage, _ = train_and_map(
@@ -573,7 +559,6 @@ for subject in subjects:
         plot_transition_graph(
             transition_probs,
             subject_path / retrain / "transition_prob_hidden.svg",
-            manual=False,
             state_map=subject_state_to_stage,
         )
 
@@ -584,8 +569,57 @@ for subject in subjects:
         plot_transition_graph(
             transition_probs_mapped,
             subject_path / retrain / "transition_prob_mapped.svg",
-            manual=True,
+            state_color_map=stage_color_map,
         )
+
+        if retrain == "shared_model":
+            state_order_num_s = list(
+                filter(
+                    lambda x: int(x) in transition_probs.columns.values,
+                    state_order_num_s,
+                )
+            )
+            transition_probs = transition_probs.loc[
+                state_order_num_s, state_order_num_s
+            ].rename(
+                index=lambda x: f"{x} ({subject_state_to_stage[x]})",
+                columns=lambda x: f"{x} ({subject_state_to_stage[x]})",
+            )
+            os.makedirs(common_path / "by_subject", exist_ok=True)
+            # Plot transition matrix heatmap
+            plt.figure(figsize=(len(state_order_num_s), len(state_order_num_s) * 0.8))
+            # Create mask for low probability transitions
+            mask = transitions < 0.001
+
+            sns.heatmap(
+                transition_probs,
+                annot=True,
+                fmt=".3f",
+                cmap="PuRd",
+                mask=mask,
+                cbar_kws={"label": "Transition Probability"},
+            )
+
+            plt.title("State Transition Probabilities")
+            plt.xlabel("To State")
+            plt.ylabel("From State")
+            plt.tight_layout()
+            plt.savefig(
+                common_path / "by_subject" / f"{subject}_transition_matrix_next.svg"
+            )
+            plt.close()
+
+            G_next = plot_transition_graph(
+                transition_probs,
+                save_path=common_path
+                / "by_subject"
+                / f"{subject}_transition_prob_next.svg",
+                state_color_map=state_color_map,
+                state_map=state_to_stage,
+                th=0.001,
+                labels=False,
+            )
+            plt.close()
 
         # save patient results
         results.to_csv(subject_path / retrain / "results.csv")

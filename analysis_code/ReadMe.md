@@ -15,7 +15,7 @@ This repository contains a comprehensive pipeline for analyzing high-density EEG
 2. **Environment Setup**
    ```bash
    # Create and activate a new conda environment
-   conda create -n sleep_analysis python=3.11
+   conda create -n sleep_analysis python=3.11.10
    conda activate sleep_analysis
 
    # Install dependencies from requirements.txt
@@ -47,9 +47,12 @@ This repository contains a comprehensive pipeline for analyzing high-density EEG
 - Statistical test results (.csv)
 
 ### 2. Data Preprocessing
-**Script**: `preprocessing_main.py`
+**Scripts**: 
+- `preprocessing_main.py`: Main processing script
+- `preprocessing_utils.py`: Utility functions for preprocessing
+
 **Functionality**:
-- Memory-efficient batch processing of EEG data
+- Batch processing of spectral features
 - Channel type mapping and montage setup
 - Filtering and referencing
 - Epoch creation with configurable length
@@ -72,18 +75,22 @@ This repository contains a comprehensive pipeline for analyzing high-density EEG
 ### 3. Signal Decomposition
 **Script**: `decomposition_main.py`
 **Functionality**:
+- Cross-subject analysis, joins and preprocess data from all subjects
 - Applies advanced signal decomposition techniques
 - Dimensionality reduction
 - Component extraction
 - Pattern identification
-- Cross-subject analysis
+- for  "six_channels" subset add this to the output path:
+*->* output_path = Path(PARAMETERS["OUTPUT_DIR"]) / "six_channels"
+
 
 **Outputs**:
 - Decomposition matrices (.npy)
-- Component weights (.csv)
+- Component weights and map figures (.csv, .svg)
 - Explained variance ratios (.csv)
-- Component visualizations (.png)
-- Cross-subject alignment data (.csv)
+- Component visualizations - state space and timeline (.svg)
+- for the "six_channels" the same output wil be saved in the subfolder
+
 
 ### 4. Component Analysis
 **Script**: `component_statistics.py`

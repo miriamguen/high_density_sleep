@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import yaml
 from pathlib import Path
 import os
@@ -35,6 +36,7 @@ metadata_columns = ["stage"]
 stage_data = data.groupby("stage").mean()
 stages = stage_data.index
 os.makedirs(output_dir / "stage_maps", exist_ok=True)
+max_val = np.max(np.abs(stage_data.values))
 for stage in stages:
     weights = stage_data.loc[[stage], :].T
     plot_component_weight_map(
@@ -45,7 +47,9 @@ for stage in stages:
         channel_positions=channel_positions,
         title=f"{stage.title()} mean feature map",
         save_path=output_dir / "stage_maps",
-        electrodes=electrodes
+        electrodes=electrodes,
+        color_map="PuOr_r",
+        max_val=max_val,
     )
 
 ica_pca = "ica"
@@ -78,7 +82,9 @@ data.drop(columns=["stage"], inplace=True)
 state_data = data.groupby("hidden_states").mean()
 states = state_data.index
 
+import numpy as np
 
+max_val = np.max(np.abs(state_data.values))
 for state in states:
     weights = state_data.loc[[state], :].T
     plot_component_weight_map(
@@ -90,5 +96,6 @@ for state in states:
         title=f"{state.title()} mean feature map",
         save_path=hmm_dir / "state_maps",
         electrodes=electrodes,
-        color_map="PRGn",
+        color_map="PuOr_r",
+        max_val=max_val,
     )
