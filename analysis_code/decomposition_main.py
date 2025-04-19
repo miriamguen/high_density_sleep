@@ -37,7 +37,7 @@ if __name__ == "__main__":
     output_path = Path(PARAMETERS["OUTPUT_DIR"])
     data_path = Path(PARAMETERS["DATA_DIR"])
     use_electrodes = PARAMETERS["select_channels"]
-    if use_electrodes=='None':
+    if use_electrodes == "None":
         use_electrodes = None
 
     os.makedirs(output_path, exist_ok=True)
