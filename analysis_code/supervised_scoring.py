@@ -25,6 +25,10 @@ from sklearn.metrics import (
     f1_score,
 )
 
+from sleep_evaluation_utils import (
+    get_sleep_measures_for_patient,
+    compare_sleep_and_unsupervised_measures,
+)
 
 os.getcwd()
 
@@ -85,10 +89,11 @@ pca_ica = "pca"
 over_all_metrics = {}
 over_all_metrics_yasa = {}
 all_yasa_labels = []
-max_comp = 63
+night_measures_all = []
+max_comp = data.columns.str.startswith("pca").sum()
 min_comp = 1
 
-if os.path.exists(save_dir / f"{pca_ica}_metrics_df.csv"):
+if os.path.exists(save_dir / f"{pca_ica}_metrics_df_.csv"):
     metrics_df = pd.read_csv(save_dir / f"{pca_ica}_metrics_df.csv")
     over_all_metrics_yasa_df = pd.read_csv(save_dir / f"yasa_metrics_df.csv")
 else:
@@ -225,8 +230,11 @@ else:
                 )
             }
         )
+        night_measures = {}
+        night_measures["labels"] = get_sleep_measures_for_patient(subject_data["stage"])
+        night_measures["yasa"] = get_sleep_measures_for_patient(hypno_df["stage"])
 
-        for i in tqdm(range(min_comp, max_comp)):
+        for i in tqdm(range(min_comp, max_comp + 1)):
             train_on = data.columns[data.columns.str.startswith(pca_ica)][0:i]
 
             X_train = train_data[train_on]
@@ -269,8 +277,13 @@ else:
             result["accuracy"] = accuracy_score(y_test, y_pred)
             result["components"] = i
 
+            night_measures[f"svm_{i}_pcs"] = get_sleep_measures_for_patient(y_pred)
             over_all_metrics[run_name] = result
 
+        night_measures = pd.DataFrame(night_measures).T
+        night_measures["subject"] = subject
+        night_measures.to_csv(save_dir / f"{subject}_night_measures.csv", index=False)
+        night_measures_all.append(night_measures)
     metrics_df = pd.DataFrame(over_all_metrics).T
     metrics_df.to_csv(save_dir / f"{pca_ica}_metrics_df.csv", index=False)
     over_all_metrics_yasa_df = pd.DataFrame(over_all_metrics_yasa).T
@@ -281,6 +294,31 @@ plt.rcParams["legend.fontsize"] = 14
 plt.rcParams["axes.labelsize"] = 14
 plt.rcParams["xtick.labelsize"] = 14
 plt.rcParams["ytick.labelsize"] = 14
+
+night_measures_all = pd.concat(night_measures_all, axis=0)
+# todo: calculate ICC for the night measures of yasa and 5 pcs
+labels = night_measures_all.loc["labels", :].set_index("subject")
+yasa_pred = night_measures_all.loc["yasa", :].set_index("subject")
+svm_5_pcs = night_measures_all.loc["svm_5_pcs", :].set_index("subject")
+svm_max_pcs = night_measures_all.loc[f"svm_{max_comp}_pcs", :].set_index("subject")
+
+compare_sleep_and_unsupervised_measures(
+    sleep_measures_all=labels,
+    unsupervised_measures_all=yasa_pred,
+    save_path=save_dir / "yasa_vs_labels",
+)
+
+compare_sleep_and_unsupervised_measures(
+    sleep_measures_all=labels,
+    unsupervised_measures_all=svm_5_pcs,
+    save_path=save_dir / "svm_5_pcs_vs_labels",
+)
+
+compare_sleep_and_unsupervised_measures(
+    sleep_measures_all=labels,
+    unsupervised_measures_all=svm_max_pcs,
+    save_path=save_dir / f"svm_{max_comp}_pcs_vs_labels",
+)
 
 over_all_metrics_yasa_summary = over_all_metrics_yasa_df.describe()
 
@@ -397,8 +435,8 @@ for stage in stages:
 
 ax[3].legend().remove()
 ax[3].set_xlabel("Number of Components")
-ax[3].set_xticks(range(1, max_comp, 5))
-ax[3].set_xticklabels(range(1, max_comp, 5))
+ax[3].set_xticks(range(1, max_comp + 1, 5))
+ax[3].set_xticklabels(range(1, max_comp + 1, 5))
 ax[3].set_ylabel("F1")
 ax[3].set_ylim(-0.02, 1)
 
