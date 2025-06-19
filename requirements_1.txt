@@ -76,7 +76,7 @@ plotly==5.24.1
 plotly-express==0.4.1
 pooch==1.8.2
 prompt_toolkit==3.0.48
-protobuf==5.29.3
+protobuf==5.29.5
 psutil==6.0.0
 pure_eval==0.2.3
 pyarrow==17.0.0
