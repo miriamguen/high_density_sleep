@@ -118,7 +118,7 @@ tqdm==4.66.5
 traitlets==5.14.3
 typing_extensions==4.12.2
 tzdata==2024.2
-urllib3==2.5.0
+urllib3==2.6.3
 watchdog==6.0.0
 wcwidth==0.2.13
 widgetsnbextension==4.0.13
